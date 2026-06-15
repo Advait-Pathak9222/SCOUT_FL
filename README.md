@@ -63,7 +63,7 @@ A3 is Step 11.
 4. **[done]** Sensing-only baselines (random / SNR / CRB) + submodularity check.
 5. **[done]** Coverage/freshness map + fairness utility + composite `TotalUtility`; multi-round loop (`run_synthetic`, no FL yet).
 6. **[done]** AirComp aggregation MSE + comm channels + energy/latency + constraint-integrated greedy (feasibility gate + relax-and-log); **A2** demo (`run_aircomp`).
-7. **[next]** FL pipeline (MNIST/Fashion-MNIST first) + FedAvg + OTA distortion.
+7. **[in progress]** FL pipeline: **datasets (MNIST/Fashion-MNIST) + IID/Dirichlet partitioning [done]**; models, client/server, FedAvg + OTA distortion, and the federated training loop [next].
 8. **[next]** **Asaad-style MSE+CRB scheduling baseline** (non-negotiable).
 9. Small synthetic experiments (`run_synthetic`, `run_baselines`, `run_ablations`).
 10. Semi-real data: **DeepSense 6G** (primary), WiMANS (secondary). *Not* MNIST/CIFAR as the main result.

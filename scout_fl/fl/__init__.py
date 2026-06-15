@@ -1,8 +1,8 @@
-"""Federated-learning pipeline (Step 7+): datasets, partitioning, models,
-client/server, aggregation (FedAvg + AirComp distortion), training loop.
+"""Federated-learning pipeline (Step 7).
 
-Not implemented in milestone 1 — the sensing core, selection, microbenchmark,
-and baselines come first. Module stubs are intentionally omitted to keep the
-repo clean; see the README for planned responsibilities and class/function
-names.
+Implemented: datasets (MNIST/Fashion-MNIST via torchvision, config-controlled
+download) + partitioning (IID + Dirichlet non-IID).
+Next: models, client/server, aggregation (FedAvg + AirComp distortion from
+Step 6), and the federated training loop that integrates SCOUT-FL selection.
+DeepSense 6G / WiMANS come only after A1-Full works on synthetic + MNIST/Fashion.
 """

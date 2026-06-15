@@ -86,12 +86,14 @@ selection:
   method: scout_greedy          # scout_greedy | random | snr_only | crb_only | loss | grad_norm | channel | divfl | oort | asaad_style
   use_lazy_greedy: true         # CELF lazy-greedy (recommended for K > ~50)
 
-fl:                             # (Step 7) federated learning task
-  enabled: false
-  dataset: mnist                # mnist | fashion_mnist | cifar10 | har (Step 10)
-  model: small_cnn              # mlp | small_cnn | resnet_lite
-  non_iid: dirichlet            # iid | dirichlet | spatial
-  dirichlet_alpha: 0.3
+fl:                             # federated learning task (Step 7)
+  enabled: false                # training loop lands with models/aggregation (next Step-7 piece)
+  dataset: mnist                # mnist | fashion_mnist  (cifar10/har later)
+  data_root: data               # torchvision download/cache directory
+  download: true                # automatic dataset download
+  model: small_cnn              # mlp | small_cnn  (resnet_lite later)
+  non_iid: dirichlet            # iid | dirichlet  (spatial later)
+  dirichlet_alpha: 0.3          # smaller => more label skew
   local_epochs: 1
   rounds: 50
   batch_size: 64
