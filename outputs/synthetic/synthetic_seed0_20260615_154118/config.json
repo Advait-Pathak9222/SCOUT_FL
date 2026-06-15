@@ -1,0 +1,102 @@
+{
+  "experiment": "synthetic_small",
+  "seed": 0,
+  "output_dir": "outputs",
+  "rounds": 50,
+  "network": {
+    "num_clients": 20,
+    "budget": 5,
+    "num_targets": 3,
+    "num_regions": 9,
+    "area_size": [
+      100.0,
+      100.0
+    ]
+  },
+  "geometry": {
+    "bs_position": [
+      50.0,
+      50.0
+    ],
+    "random_clients": true,
+    "random_targets": true
+  },
+  "channel": {
+    "model": "rician",
+    "rician_k_db": 6.0,
+    "pathloss_exponent": 3.0,
+    "reference_distance": 1.0,
+    "noise_power_dbm": -90.0
+  },
+  "sensing": {
+    "ref_snr_db": 20.0,
+    "ref_distance": 10.0,
+    "pathloss_exponent": 2.0,
+    "tx_power_dbm": 20.0,
+    "rcs_mean": 1.0,
+    "rcs_std": 0.3,
+    "k_range": 1.0,
+    "k_angle": 0.05,
+    "prior_fim": 0.001,
+    "target_weights": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "coverage": {
+    "rho": 0.92,
+    "innovation": 0.08,
+    "sensing_range": 18.0,
+    "contribution_scale": 1.0,
+    "saturating": "exp"
+  },
+  "fairness": {
+    "enabled": false,
+    "age_weight": 1.0
+  },
+  "objectives": {
+    "alpha_learning": 1.0,
+    "lambda_sense": 1.0,
+    "lambda_coverage": 0.5,
+    "lambda_fairness": 0.3
+  },
+  "constraints": {
+    "crb_max": null,
+    "mse_agg_max": null,
+    "latency_max": null,
+    "energy_max": null,
+    "power_budget": null,
+    "infeasible_policy": "relax_and_log"
+  },
+  "aircomp": {
+    "enabled": false,
+    "power_norm": "simple"
+  },
+  "selection": {
+    "method": "scout_greedy",
+    "use_lazy_greedy": true
+  },
+  "fl": {
+    "enabled": false,
+    "dataset": "mnist",
+    "model": "small_cnn",
+    "non_iid": "dirichlet",
+    "dirichlet_alpha": 0.3,
+    "local_epochs": 1,
+    "rounds": 50,
+    "batch_size": 64,
+    "lr": 0.01
+  },
+  "mobility": {
+    "enabled": false,
+    "target_speed": 0.0
+  },
+  "verify": {
+    "submodularity_samples": 1000
+  },
+  "logging": {
+    "save_per_round": true,
+    "save_plots": true
+  }
+}

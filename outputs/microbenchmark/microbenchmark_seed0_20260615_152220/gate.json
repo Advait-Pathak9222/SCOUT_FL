@@ -1,0 +1,17 @@
+{
+  "scout_crb": 0.11193493210480344,
+  "snr_only_crb": 1.141421060683794,
+  "gate_pass": true,
+  "scout_selected": [
+    1,
+    2
+  ],
+  "snr_selected": [
+    0,
+    1
+  ],
+  "crb_selected": [
+    1,
+    2
+  ]
+}

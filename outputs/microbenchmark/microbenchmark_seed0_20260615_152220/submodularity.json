@@ -1,0 +1,9 @@
+{
+  "samples": 500,
+  "submodularity_violations": 0,
+  "submodularity_violation_rate": 0.0,
+  "max_violation": 0.0,
+  "monotonicity_violations": 0,
+  "is_submodular": true,
+  "is_monotone": true
+}

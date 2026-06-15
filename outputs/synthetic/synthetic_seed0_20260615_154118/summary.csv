@@ -1,0 +1,5 @@
+avg_crb,avg_mean_uncertainty,avg_select_ms,final_mean_uncertainty,jain_fairness,selector
+0.10378,0.006,0.8772,0.0,0.4131,scout
+0.09205,0.0241,0.3862,0.0,0.25,sensing_only
+0.09205,0.0241,0.0069,0.0,0.25,snr_only
+0.38004,0.0271,0.0075,0.0173,0.9379,random

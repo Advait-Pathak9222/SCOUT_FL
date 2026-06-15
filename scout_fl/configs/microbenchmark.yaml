@@ -1,0 +1,40 @@
+# Mandatory microbenchmark (SCOUT-FL milestone-1 gate).
+# Goal: prove "high sensing-SNR != high sensing value".
+# Run: python -m scout_fl.experiments.run_microbenchmark --config scout_fl/configs/microbenchmark.yaml
+#
+# 1 target, 3 clients, budget = 2.
+#   - clients 1 & 2: HIGH SNR but observe the target from ~the same bearing (radial ~ +x)
+#       => redundant range information, weak cross-range (y) information
+#   - client 3: MEDIUM SNR but a complementary bearing (radial ~ -y)
+#       => fills the weak axis, large CRB reduction
+# Expected: subsets {1,3} and {2,3} beat {1,2}; the SCOUT greedy selector chooses
+# the complementary pair while the naive SNR-only selector chooses {1,2}.
+
+experiment: microbenchmark
+seed: 0
+output_dir: outputs
+
+geometry:
+  bs_position: [0.0, 0.0]
+  targets:
+    - [50.0, 0.0]           # single target
+  clients:
+    - [0.0, 0.0]            # client 1: bearing ~0deg  (radial ~ +x)  -- HIGH SNR
+    - [5.0, 6.0]            # client 2: bearing ~-8deg (radial ~ +x)  -- HIGH SNR (co-located angle)
+    - [50.0, 40.0]          # client 3: bearing -90deg (radial ~ -y)  -- MEDIUM SNR (complementary)
+
+sensing:
+  snr_db: [20.0, 20.0, 10.0]   # per-client sensing SNR (dB); clients 1,2 high, client 3 medium
+  k_range: 1.0                 # radial (range) information coefficient (~ effective bandwidth^2)
+  k_angle: 0.02                # tangential (angle/cross-range) coefficient (small => angle info weak)
+  prior_fim: 1.0e-3            # J0 = prior_fim * I (prior/regularization, keeps FIM PD)
+  target_weights: [1.0]        # w_m per target
+
+selection:
+  budget: 2                    # S_max
+
+verify:
+  submodularity_samples: 500   # random (A subset B, x) triples for the submodularity check
+
+logging:
+  save_plots: true

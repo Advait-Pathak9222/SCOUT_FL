@@ -1,0 +1,6 @@
+{
+  "mse_eps": 0.018,
+  "g_min_required": 2.2222222222222223,
+  "aware_relaxed_steps": 0,
+  "n_feasible_clients": 9
+}

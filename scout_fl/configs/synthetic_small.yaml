@@ -1,0 +1,109 @@
+# Small synthetic ISAC scenario (fast; for development + sanity sweeps).
+# Run (once run_synthetic.py lands in Step 9):
+#   python -m scout_fl.experiments.run_synthetic --config scout_fl/configs/synthetic_small.yaml
+#
+# Fields marked "(Step N)" are scaffolding hooks: present and documented now,
+# activated in the staged implementation order (see README). Defaults keep the
+# extra machinery OFF so milestone-1 sensing selection runs cleanly first.
+
+experiment: synthetic_small
+seed: 0
+output_dir: outputs
+rounds: 50                      # number of simulation rounds (sensing/coverage dynamics)
+
+network:
+  num_clients: 20               # K
+  budget: 5                     # S_max selected clients per round
+  num_targets: 3                # M
+  num_regions: 9                # R (e.g. 3x3 grid)
+  area_size: [100.0, 100.0]     # metres (width, height)
+
+geometry:
+  bs_position: [50.0, 50.0]
+  random_clients: true          # sample client positions uniformly in area
+  random_targets: true          # sample target positions uniformly in area
+
+channel:                        # wireless comm model for AirComp (Step 6, active)
+  model: rician                 # rayleigh | rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0      # metres
+  snr_ref_db: 20.0              # comm received SNR (dB) at ref_distance (P=1, unit fading)
+
+sensing:
+  ref_snr_db: 20.0              # sensing SNR (dB) for a unit-RCS target at ref_distance
+  ref_distance: 10.0            # metres
+  pathloss_exponent: 2.0        # sensing SNR decays as (ref_distance/range)^exponent
+  tx_power_dbm: 20.0            # (Step 6) used for the comm/AirComp link budget
+  rcs_mean: 1.0                 # mean radar cross section
+  rcs_std: 0.3                  # RCS variability across targets
+  k_range: 1.0                  # radial (range) information coefficient
+  k_angle: 0.05                 # tangential (angle/cross-range) coefficient
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:                       # dynamic region uncertainty / freshness map (Step 5, active)
+  rho: 0.92                     # per-region persistence (U_r decays toward staleness)
+  innovation: 0.08              # xi_r per-round uncertainty growth
+  sensing_range: 18.0           # metres; client->region contribution decay scale
+  contribution_scale: 1.0       # c_{k,r} sensing contribution scale
+  saturating: exp               # concave saturating g(.): "exp" (1-exp(-x)) | "min"
+
+fairness:                       # (Step 5) client/region participation fairness
+  enabled: false
+  age_weight: 1.0
+
+objectives:                     # composite-utility weights (terms normalized to [0,1] at runtime)
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5          # active (Step 5)
+  lambda_fairness: 0.3          # active (Step 5)
+
+constraints:                    # PRIMARY: hard constraints (not weighted penalties)
+  crb_max: null                 # per-target CRB threshold Gamma_m (null = inactive)
+  mse_agg_max: 0.018           # AirComp aggregation MSE epsilon (active, Step 6)
+  latency_max: null             # seconds
+  energy_max: null              # joules
+  power_budget: null            # total transmit power
+  infeasible_policy: relax_and_log   # never silently ignore: relax with logged penalty
+
+aircomp:                        # over-the-air aggregation (Step 6, active)
+  enabled: true
+  power: 1.0                    # per-client transmit power (full budget), normalized
+  power_unoptimized: 0.25       # 'without resource allocation' power (no power control)
+  sigma2: 1.0                   # receiver noise variance (normalized)
+  bandwidth: 1.0e6              # Hz (uplink, for the latency model)
+  model_bits: 1.0e5             # uplink model-update size (bits)
+
+energy:                         # per-round energy/latency model (normalized dev-scale)
+  cpu_cycles: 1.0e7
+  cpu_freq: 1.0e9
+  kappa: 1.0e-27
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  method: scout_greedy          # scout_greedy | random | snr_only | crb_only | loss | grad_norm | channel | divfl | oort | asaad_style
+  use_lazy_greedy: true         # CELF lazy-greedy (recommended for K > ~50)
+
+fl:                             # (Step 7) federated learning task
+  enabled: false
+  dataset: mnist                # mnist | fashion_mnist | cifar10 | har (Step 10)
+  model: small_cnn              # mlp | small_cnn | resnet_lite
+  non_iid: dirichlet            # iid | dirichlet | spatial
+  dirichlet_alpha: 0.3
+  local_epochs: 1
+  rounds: 50
+  batch_size: 64
+  lr: 0.01
+
+mobility:                       # (Step 11 / tracking extension)
+  enabled: false
+  target_speed: 0.0             # metres/round
+
+verify:
+  submodularity_samples: 1000
+
+logging:
+  save_per_round: true
+  save_plots: true

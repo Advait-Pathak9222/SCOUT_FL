@@ -1,0 +1,53 @@
+{
+  "experiment": "microbenchmark",
+  "seed": 0,
+  "output_dir": "outputs",
+  "geometry": {
+    "bs_position": [
+      0.0,
+      0.0
+    ],
+    "targets": [
+      [
+        50.0,
+        0.0
+      ]
+    ],
+    "clients": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        5.0,
+        6.0
+      ],
+      [
+        50.0,
+        40.0
+      ]
+    ]
+  },
+  "sensing": {
+    "snr_db": [
+      20.0,
+      20.0,
+      10.0
+    ],
+    "k_range": 1.0,
+    "k_angle": 0.02,
+    "prior_fim": 0.001,
+    "target_weights": [
+      1.0
+    ]
+  },
+  "selection": {
+    "budget": 2
+  },
+  "verify": {
+    "submodularity_samples": 500
+  },
+  "logging": {
+    "save_plots": true
+  }
+}

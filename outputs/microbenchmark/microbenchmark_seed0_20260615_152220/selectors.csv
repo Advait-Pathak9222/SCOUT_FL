@@ -1,0 +1,4 @@
+crb_sum,logdet,rmse,select_time_ms,selected,selector
+0.11193,20.7059,0.33457,0.047,"{2,3}",scout_greedy
+1.14142,18.9816,1.06837,0.2058,"{1,2}",snr_only
+0.11193,20.7059,0.33457,0.052,"{2,3}",crb_only

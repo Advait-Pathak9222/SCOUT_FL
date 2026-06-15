@@ -1,0 +1,4 @@
+agg_mse,energy_J,latency_s,meets_mse_eps,min_channel_g,policy,selected,sensing_logdet
+0.09133,0.6708,0.2108,True,1.7519,no_resource_alloc,"[1, 10, 13, 18, 19]",71.1427
+0.02283,0.7537,0.0885,True,1.7519,simple_power_norm,"[1, 10, 13, 18, 19]",71.1427
+0.02283,0.7537,0.0885,True,1.7519,aircomp_aware,"[1, 10, 13, 18, 19]",71.1427
