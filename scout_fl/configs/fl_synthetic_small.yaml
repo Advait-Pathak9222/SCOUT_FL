@@ -1,0 +1,102 @@
+# A1-Full SCOUT-FL — small end-to-end federated run on MNIST/Fashion-MNIST.
+# Run:  python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/fl_synthetic_small.yaml
+#       python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/fl_synthetic_small.yaml --quick
+#       make fl-synthetic-small
+#
+# Runs each selection method as its own federated training and compares FL
+# accuracy alongside the ISAC sensing/coverage/fairness/AirComp metrics.
+
+experiment: fl_synthetic_small
+seed: 0
+output_dir: outputs
+
+network:
+  num_clients: 20
+  budget: 5                     # selected clients per round
+  num_targets: 3
+  num_regions: 9
+  area_size: [100.0, 100.0]
+
+geometry:
+  bs_position: [50.0, 50.0]
+  random_clients: true
+  random_targets: true
+
+channel:                        # comm channel for AirComp
+  model: rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0
+  snr_ref_db: 20.0
+
+sensing:
+  ref_snr_db: 20.0
+  ref_distance: 10.0
+  pathloss_exponent: 2.0
+  rcs_mean: 1.0
+  rcs_std: 0.3
+  k_range: 1.0
+  k_angle: 0.05
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:
+  rho: 0.92
+  innovation: 0.08
+  sensing_range: 18.0
+  saturating: exp
+
+objectives:                     # composite SCOUT-FL utility weights (terms normalized at runtime)
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5
+  lambda_fairness: 0.3
+
+constraints:
+  crb_max: null
+  mse_agg_max: 0.05             # AirComp aggregation-MSE target (feasibility gate)
+  latency_max: null
+  energy_max: null
+  power_budget: null
+  infeasible_policy: relax_and_log
+
+aircomp:
+  enabled: true                 # use AirComp MSE feasibility gate in SCOUT selection
+  ota_distortion: false         # inject Gaussian distortion (std = scale*sqrt(MSE)) into FedAvg
+  ota_noise_scale: 0.5
+  power: 1.0
+  sigma2: 1.0
+  bandwidth: 1.0e+6
+  model_bits: 1.0e+5
+
+energy:
+  cpu_cycles: 1.0e+7
+  cpu_freq: 1.0e+9
+  kappa: 1.0e-27
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  methods: [scout_greedy, random, loss, snr_only]   # run each as its own FL training
+  use_lazy_greedy: true
+
+fl:
+  enabled: true
+  dataset: mnist                # mnist | fashion_mnist
+  data_root: data
+  download: true
+  model: mlp                    # mlp | small_cnn
+  optimizer: sgd                # sgd | adam
+  non_iid: dirichlet            # iid | dirichlet
+  dirichlet_alpha: 0.3
+  rounds: 12                    # FL communication rounds
+  local_epochs: 1
+  batch_size: 64
+  lr: 0.05
+  device: cpu                   # cpu | cuda | mps
+  probe_batches: 1              # mini-batches for the per-client selection-embedding probe
+  subsample_train: 10000        # 0/null = full train set (kept small for speed)
+  subsample_test: 2000          # 0/null = full test set
+
+logging:
+  save_plots: true

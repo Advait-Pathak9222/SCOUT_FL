@@ -28,7 +28,10 @@ class LearningUtility:
             self.S = np.asarray(similarity, dtype=float)
         elif embeddings is not None:
             G = np.asarray(embeddings, dtype=float)             # (K, d)
-            d2 = ((G[:, None, :] - G[None, :, :]) ** 2).sum(-1)  # (K, K)
+            # Gram-matrix pairwise squared distances (no (K,K,d) intermediate):
+            # d2_ij = ||g_i||^2 + ||g_j||^2 - 2 g_i . g_j  -- scales to high-dim grads.
+            sq = np.einsum("ij,ij->i", G, G)                    # (K,)
+            d2 = np.maximum(sq[:, None] + sq[None, :] - 2.0 * (G @ G.T), 0.0)
             if sigma is None:
                 upper = d2[np.triu_indices(G.shape[0], k=1)]
                 med = float(np.median(upper)) if upper.size else 1.0

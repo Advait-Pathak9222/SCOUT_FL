@@ -1,0 +1,30 @@
+[
+  {
+    "method": "scout_greedy",
+    "avg_probe_s": 0.0337,
+    "avg_select_s": 0.00019,
+    "avg_train_s": 0.007,
+    "avg_agg_s": 0.00036
+  },
+  {
+    "method": "random",
+    "avg_probe_s": 0.0064,
+    "avg_select_s": 3e-05,
+    "avg_train_s": 0.0074,
+    "avg_agg_s": 0.00039
+  },
+  {
+    "method": "loss",
+    "avg_probe_s": 0.0062,
+    "avg_select_s": 0.00011,
+    "avg_train_s": 0.0064,
+    "avg_agg_s": 0.00039
+  },
+  {
+    "method": "snr_only",
+    "avg_probe_s": 0.0073,
+    "avg_select_s": 1e-05,
+    "avg_train_s": 0.0085,
+    "avg_agg_s": 0.00036
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "method": "scout_greedy",
+    "final_test_acc": 0.424,
+    "best_test_acc": 0.424,
+    "final_crb": 10.34209,
+    "avg_agg_mse": 0.040049,
+    "jain_fairness": 0.4263,
+    "avg_round_s": 0.0413
+  },
+  {
+    "method": "random",
+    "final_test_acc": 0.473,
+    "best_test_acc": 0.473,
+    "final_crb": 1.92251,
+    "avg_agg_mse": 0.229534,
+    "jain_fairness": 0.4263,
+    "avg_round_s": 0.0142
+  },
+  {
+    "method": "loss",
+    "final_test_acc": 0.362,
+    "best_test_acc": 0.413,
+    "final_crb": 2.9683,
+    "avg_agg_mse": 0.409192,
+    "jain_fairness": 0.7364,
+    "avg_round_s": 0.0131
+  },
+  {
+    "method": "snr_only",
+    "final_test_acc": 0.587,
+    "best_test_acc": 0.587,
+    "final_crb": 1.3054,
+    "avg_agg_mse": 0.5817,
+    "jain_fairness": 0.3,
+    "avg_round_s": 0.0162
+  }
+]
