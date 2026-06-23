@@ -16,6 +16,34 @@ selection problem with a `(1 − 1/e)` greedy guarantee.
 
 ---
 
+## Reproduce on a GPU machine (full campaign)
+
+```bash
+git clone <repo-url> && cd SCOUT_FL
+python -m venv .venv && source .venv/bin/activate
+# install the CUDA build of torch first (pick the cuXXX matching your driver):
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
+
+# (optional) sanity-check device + a tiny end-to-end smoke before the long run:
+python -c "from scout_fl.utils.device import resolve_device, describe_device as d; x=resolve_device('auto'); print(x, d(x))"
+bash scripts/run_all_experiments.sh cuda --quick      # ~minutes; proves the pipeline
+
+# FULL campaign (Tests A-E + ablations + P7 regret + theory validation), resumable:
+bash scripts/run_all_experiments.sh cuda              # re-run any time to resume
+```
+
+Datasets auto-download on first use (CIFAR-10/100, MNIST, Fashion-MNIST, EMNIST via
+torchvision; UCI HAR via its loader) — `data/`, `runs/`, `outputs/` are gitignored and
+regenerated locally. Per-round results land in `runs/<tag>/<point>/<method>__seed<seed>.json`;
+tables/plots/theory-validation are emitted in the final step. Kill and re-run safely
+(completed `(point, method, seed)` units are skipped).
+
+> For ≥5-seed statistical power on the one run, launch with `'seeds=[0,1,2,3,4]'`:
+> `bash scripts/run_all_experiments.sh cuda 'seeds=[0,1,2,3,4]'`.
+
+---
+
 ## Quickstart
 
 ```bash

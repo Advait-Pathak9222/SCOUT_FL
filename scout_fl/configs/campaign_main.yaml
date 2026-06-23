@@ -68,7 +68,8 @@ objectives:
 
 constraints:
   crb_max: null
-  mse_agg_max: 0.05
+  mse_agg_max: 1.0e-3            # AirComp-MSE budget; calibrated to bind in the physical regime
+                                 # (MSE ~1e-4 good SNR .. >1e-2 cell-edge) so the gate + dual engage
   latency_max: null
   energy_max: null
   power_budget: null
@@ -79,15 +80,29 @@ aircomp:
   enabled: true
   ota_distortion: true           # AirComp distortion ON for the main campaign
   ota_noise_scale: 0.5
-  power: 1.0
-  sigma2: 1.0
-  bandwidth: 1.0e+6
-  model_bits: 1.0e+5
+  power: 1.0                      # overridden by physical.tx_power_dbm when physical.enabled
+  sigma2: 1.0                     # overridden by thermal noise k*T*F*B when physical.enabled
+  bandwidth: 1.0e+6              # Hz (real)
+  model_bits: 1.0e+5             # overridden by (#params * bits_per_param) when physical.enabled
+
+# Genuine physical units (no scaling): sigma^2 = kTF*B, P from dBm, real log-distance
+# path loss -> P*g/sigma^2 is a true SNR; energy in J, latency in s. See sim/link_budget.py.
+physical:
+  enabled: true
+  carrier_ghz: 3.5               # 5G FR1 mid-band
+  noise_figure_db: 7.0
+  temperature_k: 290.0
+  tx_power_dbm: -15.0           # ~0.03 mW energy-constrained uplink; median SNR ~14 dB with
+                                 # a cell-edge tail so AirComp distortion engages; SNR sweep varies this
+  bits_per_param: 32            # fp32 model payload
+  cycles_per_sample: 1.0e+6     # CPU cycles per local sample (small CNN/MLP)
+  sense_power_w: 0.1            # radar sensing power per client
+  sense_time_s: 0.01            # sensing dwell time
 
 energy:
-  cpu_cycles: 1.0e+7
-  cpu_freq: 1.0e+9
-  kappa: 1.0e-27
+  cpu_cycles: 1.0e+7            # overridden by cycles_per_sample*local_samples when physical
+  cpu_freq: 1.0e+9             # Hz (1 GHz edge CPU)
+  kappa: 1.0e-28              # effective switched capacitance (J/cycle/Hz^2)
   e_sense: 0.1
   t_sense: 0.01
 

@@ -48,11 +48,15 @@ SWEEPS = {
         {"fl.dataset": "fashion_mnist", "fl.model": "small_cnn"},     # debug layer
         {"fl.dataset": "cifar10", "fl.model": "small_cnn"},           # main track
         {"fl.dataset": "cifar100", "fl.model": "small_cnn"},          # harder
-        {"fl.dataset": "uci_har", "fl.model": "mlp"},                 # wireless-sensing HAR
+        {"fl.dataset": "emnist", "fl.model": "small_cnn"},            # FEMNIST-class (real handwritten)
+        {"fl.dataset": "uci_har", "fl.model": "mlp"},                 # REAL sensor HAR (wireless-sensing task)
     ]},
     # ---- Test B: Wireless / AirComp -------------------------------------
-    "B_wireless_snr": {"test": "B", "param": "channel.snr_ref_db", "points": [
-        {"channel.snr_ref_db": s} for s in (0, 5, 10, 15, 20, 25, 30)
+    # Physical mode: sweep the real uplink Tx power (dBm) -> spans cell-edge (low SNR, AirComp
+    # distortion dominant) to cell-center (high SNR). (Vary channel.snr_ref_db instead if
+    # physical.enabled=false.)
+    "B_wireless_snr": {"test": "B", "param": "physical.tx_power_dbm", "points": [
+        {"physical.tx_power_dbm": p} for p in (-35, -30, -25, -20, -15, -10, 0)
     ]},
     "B_wireless_channel": {"test": "B", "param": "channel.model", "points": [
         {"channel.model": "rayleigh"}, {"channel.model": "rician"},

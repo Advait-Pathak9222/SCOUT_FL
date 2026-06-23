@@ -69,11 +69,20 @@ if [ "$FROM" -le 3 ]; then
     python -m scout_fl.analysis.collect --tag campaign
 fi
 
-# --- Step 4: collect + plot everything for analysis ---------------------------
+# --- Step 4: P7 online-regret experiment (standalone; CUCB vs offline oracle) ----
 if [ "$FROM" -le 4 ]; then
-    banner "Step 4/4  Collect per-round JSON -> analysis tables + plots"
+    banner "Step 4/5  P7 online-regret experiment (CUCB sensing selection)"
+    python -m scout_fl.experiments.run_regret --config scout_fl/configs/campaign_main.yaml --rounds 300
+fi
+
+# --- Step 5: collect + plot + validate theory (P6 / P3-dual / P7) -----------------
+if [ "$FROM" -le 5 ]; then
+    banner "Step 5/5  Collect tables + plots + theory validation (P6, feasibility, P7)"
     python -m scout_fl.analysis.collect          # all tags -> runs/_all/{all_rounds,summary}.csv
     python -m scout_fl.analysis.plots            # convergence + energy-per-accuracy figures
+    echo; python -m scout_fl.analysis.convergence --tag campaign_main   # P6 descent-bound regression
+    echo; python -m scout_fl.analysis.feasibility --tag campaign_main   # P3-dual bounded violation
+    echo; python -m scout_fl.analysis.regret                            # P7 sublinear regret
 fi
 
 banner "DONE. Per-round JSON: runs/<tag>/<point>/  |  tables: runs/_all/  |  plots+stats: outputs/"

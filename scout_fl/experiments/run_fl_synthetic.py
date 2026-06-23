@@ -27,7 +27,7 @@ from scout_fl.experiments.run_synthetic import build_scenario
 from scout_fl.fl.aggregation import aggregate
 from scout_fl.fl.client import local_train, probe_loss_and_embedding
 from scout_fl.fl.datasets import build_client_datasets, load_fl_dataset
-from scout_fl.fl.models import build_model
+from scout_fl.fl.models import build_model, num_params
 from scout_fl.analysis.pareto import hypervolume, normalize_objectives, pareto_front, per_method_volume
 from scout_fl.fl.partitioning import partition, partition_report, partition_spatial
 from scout_fl.fl.server import FLServer
@@ -77,6 +77,24 @@ def _zscore(a):
     a = np.asarray(a, dtype=float)
     s = a.std()
     return (a - a.mean()) / s if s > 1e-9 else np.zeros_like(a)
+
+
+def _physical_params(cfg, n_params, avg_local_samples):
+    """Genuine physical units from the link budget (or None if physical mode is off):
+    sigma^2 = thermal noise k_B*T*F*B (W); P from dBm (W); model payload = #params*bits;
+    compute = cycles_per_sample * local_samples * epochs (cycles). Energy->J, latency->s."""
+    phys = cfg.get("physical", {})
+    if not phys or not phys.get("enabled"):
+        return None
+    from scout_fl.sim.link_budget import dbm_to_watt, thermal_noise_power_w
+    B = float(cfg.aircomp.bandwidth)
+    sigma2 = thermal_noise_power_w(B, float(phys.get("noise_figure_db", 7.0)),
+                                   float(phys.get("temperature_k", 290.0)))
+    P = dbm_to_watt(float(phys.get("tx_power_dbm", 0.0)))
+    model_bits = float(n_params) * float(phys.get("bits_per_param", 32))
+    cpu_cycles = (float(phys.get("cycles_per_sample", 1.0e6)) * float(max(avg_local_samples, 1.0))
+                  * float(cfg.fl.get("local_epochs", 1)))
+    return {"power": P, "sigma2": sigma2, "model_bits": model_bits, "cpu_cycles": cpu_cycles}
 
 
 # ISCC system-baseline variants: AirComp distortion is intrinsic to OTA-FL / ISCC methods,
@@ -160,7 +178,15 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     full = list(range(K))
 
     aircomp_on = bool(cfg.aircomp.enabled)
-    P, sigma2 = float(cfg.aircomp.power), float(cfg.aircomp.sigma2)
+    # Physical units (genuine link budget) override the normalized P/sigma2/model_bits/cpu_cycles
+    # so energy is in Joules, latency in seconds, and P*g/sigma2 is a true SNR (see sim/link_budget.py).
+    _avg_local = float(np.mean([len(d) for d in client_datasets])) if client_datasets else 1.0
+    phys = _physical_params(cfg, num_params(server.model), _avg_local)
+    if phys is not None:
+        P, sigma2, model_bits, cpu_cycles = phys["power"], phys["sigma2"], phys["model_bits"], phys["cpu_cycles"]
+    else:
+        P, sigma2 = float(cfg.aircomp.power), float(cfg.aircomp.sigma2)
+        model_bits, cpu_cycles = float(cfg.aircomp.model_bits), float(cfg.energy.cpu_cycles)
     mse_eps = cfg.constraints.mse_agg_max
     duals = DualState({"mse": mse_eps}, lr=float(cfg.constraints.get("dual_lr", 0.5)))  # SCOUT-FL v2
     fair_dual = ParticipationDual(K, budget,                # JEDI participation fairness
@@ -213,8 +239,8 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         # latency NOT a pure function of channel gain, so FedCS/ISCC selectors differ from comm_only.
         _rate = cfg.aircomp.bandwidth * np.log2(1.0 + P * np.asarray(g) / sigma2)
         _het = scn.compute_het if getattr(scn, "compute_het", None) is not None else np.ones(K)
-        per_client_latency = (cfg.aircomp.model_bits / np.clip(_rate, 1e-9, None)
-                              + cfg.energy.cpu_cycles / (cfg.energy.cpu_freq * _het) + cfg.energy.t_sense)
+        per_client_latency = (model_bits / np.clip(_rate, 1e-9, None)
+                              + cpu_cycles / (cfg.energy.cpu_freq * _het) + cfg.energy.t_sense)
 
         # trust-gated twin: per-client feature [bias, loss, |grad|, gain] (standardized) ->
         # predicted loss-drop -> bounded relative learning multiplier in [1-trust, 1+trust].
@@ -313,8 +339,8 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             prev_loss = test_loss
 
         el = round_energy_latency(selected, g, power=P, sigma2=sigma2,
-                                  bandwidth=cfg.aircomp.bandwidth, model_bits=cfg.aircomp.model_bits,
-                                  cpu_cycles=cfg.energy.cpu_cycles, cpu_freq=cfg.energy.cpu_freq,
+                                  bandwidth=cfg.aircomp.bandwidth, model_bits=model_bits,
+                                  cpu_cycles=cpu_cycles, cpu_freq=cfg.energy.cpu_freq,
                                   kappa=cfg.energy.kappa, e_sense=cfg.energy.e_sense,
                                   t_sense=cfg.energy.t_sense)
         row = {
@@ -327,8 +353,14 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             "coverage_util": round(float(coverage.value(selected)), 4),
             "fairness_util": round(float(fair.value(selected)), 4),
             "crb": round(float((scn.w * sensing.crb(selected)).sum()), 5),
-            "agg_mse": round(float(mse), 6),
-            "energy": round(float(el["energy"]), 4), "latency": round(float(el["latency"]), 4),
+            "agg_mse": round(float(mse), 8),
+            # P6 convergence: ||aggregated update||^2 is the per-round descent driver (proxy for
+            # the eta/2 ||grad F||^2 term); regressed against agg_mse in analysis/convergence.py.
+            "grad_sq": round(float(np.dot(agg, agg)), 8),
+            # P2 primal-dual feasibility: the MSE dual mu and the realized constraint violation.
+            "dual_mse": round(float(duals.mu.get("mse", 0.0)), 6),
+            "mse_violation": round(float(max(0.0, mse - (mse_eps or 0.0))), 8),
+            "energy": round(float(el["energy"]), 6), "latency": round(float(el["latency"]), 6),
             "probe_time": round(probe_time, 4), "select_time": round(sel_time, 5),
             "train_time": round(train_time, 4), "agg_time": round(agg_time, 5),
             "round_time": round(probe_time + sel_time + train_time + agg_time, 4),
@@ -401,10 +433,13 @@ def run_seed(cfg, ds, seed, runs_root=None, tag="run", point="base"):
         from scout_fl.fl.datasets_external import load_channel_realizations
         g = load_channel_realizations(chan_source, scn.K, rng, root=cfg.fl.get("data_root", "data"))
     else:
+        _phys = cfg.get("physical", {})
         g = comm_channel_gains(scn.clients, np.asarray(cfg.geometry.bs_position, dtype=float), rng,
                                snr_ref_db=cfg.channel.snr_ref_db, ref_distance=cfg.channel.reference_distance,
                                pathloss_exponent=cfg.channel.pathloss_exponent,
-                               model=cfg.channel.model, rician_k_db=cfg.channel.rician_k_db)
+                               model=cfg.channel.model, rician_k_db=cfg.channel.rician_k_db,
+                               pathloss_model=("physical" if _phys and _phys.get("enabled") else "reference_snr"),
+                               carrier_ghz=float(_phys.get("carrier_ghz", 3.5)) if _phys else 3.5)
     # per-client compute-speed heterogeneity (stragglers): makes per-client latency depend on
     # COMPUTE as well as channel gain, so resource-aware baselines (FedCS, FedAVG/FedSGD-ISCC)
     # are genuinely distinct from communication-only selection. Drawn AFTER g so the channel
