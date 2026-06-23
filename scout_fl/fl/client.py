@@ -45,8 +45,12 @@ def probe_loss_and_embedding(model, dataset, *, batch_size: int = 64,
 
 def local_train(model, dataset, *, epochs: int = 1, lr: float = 0.05,
                 batch_size: int = 64, optimizer: str = "sgd", momentum: float = 0.9,
-                device: str = "cpu") -> dict:
-    """Train ``model`` (already set to the global state) locally; return the update."""
+                device: str = "cpu", max_steps: int | None = None) -> dict:
+    """Train ``model`` (already set to the global state) locally; return the update.
+
+    ``max_steps=1`` performs a single SGD step (the FedSGD update rule); ``None``
+    runs the full ``epochs`` of mini-batch SGD (the FedAvg update rule).
+    """
     init = get_flat_params(model).clone()
     model.train()
     if optimizer == "sgd":
@@ -56,7 +60,7 @@ def local_train(model, dataset, *, epochs: int = 1, lr: float = 0.05,
     else:
         raise ValueError(f"unknown optimizer {optimizer!r}")
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    total, n = 0.0, 0
+    total, n, steps = 0.0, 0, 0
     for _ in range(epochs):
         for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
@@ -66,5 +70,10 @@ def local_train(model, dataset, *, epochs: int = 1, lr: float = 0.05,
             opt.step()
             total += loss.item() * len(yb)
             n += len(yb)
+            steps += 1
+            if max_steps is not None and steps >= max_steps:
+                break
+        if max_steps is not None and steps >= max_steps:
+            break
     update = (get_flat_params(model) - init).cpu().numpy()
     return {"update": update, "loss": total / max(n, 1), "num_samples": len(dataset)}

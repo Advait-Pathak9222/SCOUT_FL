@@ -27,8 +27,9 @@ def _fake_dataset(n=40, shape=(1, 8, 8), classes=2, seed=0):
 def test_build_model_forward_shapes():
     for mtype in ("mlp", "small_cnn"):
         model = build_model(mtype, (1, 28, 28), 10)
-        out = model(torch.randn(5, 1, 28, 28))
-        assert out.shape == (5, 10)
+        assert model(torch.randn(5, 1, 28, 28)).shape == (5, 10)
+        rgb = build_model(mtype, (3, 32, 32), 100)         # CIFAR-100 shape
+        assert rgb(torch.randn(4, 3, 32, 32)).shape == (4, 100)
 
 
 def test_flat_param_roundtrip():

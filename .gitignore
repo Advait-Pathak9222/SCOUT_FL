@@ -1,0 +1,21 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- datasets (large; download via config) ---
+data/
+
+# --- experiment outputs + resumable run store (regenerated) ---
+outputs/
+runs/
+
+# --- downloaded papers (license-gated; not redistributable) ---
+Papers/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/

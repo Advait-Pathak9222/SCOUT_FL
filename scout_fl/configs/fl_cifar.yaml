@@ -1,0 +1,104 @@
+# Tougher-dataset bake-off: CIFAR-10 (default) / CIFAR-100 (--override fl.dataset=cifar100).
+# Run:  python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/fl_cifar.yaml
+#       python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/fl_cifar.yaml --override fl.dataset=cifar100
+# Same fair ISAC testbed (clustered viewpoints + spatial non-IID); only the FL task is harder.
+
+experiment: fl_cifar
+seed: 0
+seeds: [0, 1]                   # 2 seeds (CIFAR is slower than MNIST)
+output_dir: outputs
+
+network:
+  num_clients: 20
+  budget: 5
+  num_targets: 3
+  num_regions: 9
+  area_size: [100.0, 100.0]
+
+geometry:
+  layout: clustered
+  num_clusters: 5
+  cluster_spread: 3.0
+  bs_position: [50.0, 50.0]
+  random_clients: true
+  random_targets: true
+
+channel:
+  model: rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0
+  snr_ref_db: 20.0
+
+sensing:
+  ref_snr_db: 20.0
+  ref_distance: 10.0
+  pathloss_exponent: 2.0
+  rcs_mean: 1.0
+  rcs_std: 0.3
+  k_range: 1.0
+  k_angle: 0.05
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:
+  rho: 0.92
+  innovation: 0.08
+  sensing_range: 18.0
+  saturating: exp
+
+objectives:
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5
+  lambda_fairness: 0.3
+
+constraints:
+  crb_max: null
+  mse_agg_max: 0.05
+  latency_max: null
+  energy_max: null
+  power_budget: null
+  infeasible_policy: relax_and_log
+  dual_lr: 0.5
+
+aircomp:
+  enabled: true
+  ota_distortion: false
+  ota_noise_scale: 0.5
+  power: 1.0
+  sigma2: 1.0
+  bandwidth: 1.0e+6
+  model_bits: 1.0e+5
+
+energy:
+  cpu_cycles: 1.0e+7
+  cpu_freq: 1.0e+9
+  kappa: 1.0e-27
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  methods: [scout_greedy, scout_v2, jedi, random, loss, snr_only]
+  use_lazy_greedy: true
+
+fl:
+  enabled: true
+  dataset: cifar10              # cifar10 | cifar100 (override)
+  data_root: data
+  download: true
+  model: small_cnn
+  optimizer: sgd
+  non_iid: spatial
+  dirichlet_alpha: 0.3
+  rounds: 10
+  local_epochs: 1
+  batch_size: 64
+  lr: 0.05
+  device: cpu
+  probe_batches: 1
+  subsample_train: 5000
+  subsample_test: 1500
+
+logging:
+  save_plots: true

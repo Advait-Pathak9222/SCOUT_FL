@@ -1,0 +1,121 @@
+# =====================================================================
+# JEDI-FL ABLATION STUDY (small number of rounds).
+# Each component of the joint-information objective is knocked out and compared to
+# the full method (reference = jedi). Per-axis impact + significance come straight
+# from the bake-off + Test-E stats (reference auto-set to 'jedi').
+#
+#   bash scripts/run_macos.sh  scout_fl/configs/ablation.yaml
+#   bash scripts/run_nvidia.sh scout_fl/configs/ablation.yaml
+#   python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/ablation.yaml [--quick]
+#
+# Resumable: per-round JSON under runs/ablation/base/ ; re-run to resume.
+# =====================================================================
+
+experiment: ablation
+seed: 0
+seeds: [0, 1, 2]
+output_dir: outputs
+runs_dir: runs
+
+network:
+  num_clients: 100
+  budget: 10
+  num_targets: 3
+  num_regions: 9
+  area_size: [100.0, 100.0]
+
+geometry:
+  layout: clustered
+  num_clusters: 5
+  cluster_spread: 3.0
+  bs_position: [50.0, 50.0]
+  random_clients: true
+  random_targets: true
+  source: synthetic
+
+channel:
+  model: rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0
+  snr_ref_db: 20.0
+  source: synthetic
+
+sensing:
+  ref_snr_db: 20.0
+  ref_distance: 10.0
+  pathloss_exponent: 2.0
+  rcs_mean: 1.0
+  rcs_std: 0.3
+  k_range: 1.0
+  k_angle: 0.05
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:
+  rho: 0.92
+  innovation: 0.08
+  sensing_range: 18.0
+  saturating: exp
+
+objectives:
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5
+  lambda_fairness: 0.3
+  fair_dual_lr: 1.0
+
+constraints:
+  crb_max: null
+  mse_agg_max: 0.05
+  latency_max: null
+  energy_max: null
+  power_budget: null
+  infeasible_policy: relax_and_log
+  dual_lr: 0.5
+
+aircomp:
+  enabled: true
+  ota_distortion: true
+  ota_noise_scale: 0.5
+  power: 1.0
+  sigma2: 1.0
+  bandwidth: 1.0e+6
+  model_bits: 1.0e+5
+
+energy:
+  cpu_cycles: 1.0e+7
+  cpu_freq: 1.0e+9
+  kappa: 1.0e-27
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  # full method (reference) + 8 component knockouts + the two SCOUT references
+  methods: [jedi,
+            jedi_no_sensing, jedi_no_learning, jedi_no_coverage, jedi_no_kappa,
+            jedi_no_externality, jedi_fixed_rho, jedi_no_fairness, jedi_hard_gate,
+            jedi_twin,
+            scout_v2, scout_greedy]
+  use_lazy_greedy: false
+
+fl:
+  enabled: true
+  dataset: cifar10               # main task; fashion_mnist for a faster ablation via --override
+  data_root: data
+  download: true
+  model: small_cnn
+  optimizer: sgd
+  non_iid: spatial
+  dirichlet_alpha: 0.3
+  rounds: 30                     # SMALL number of rounds (ablation is lighter than the 150-round campaign)
+  local_epochs: 1
+  batch_size: 64
+  lr: 0.05
+  device: auto
+  probe_batches: 1
+  subsample_train: 20000
+  subsample_test: 4000
+
+logging:
+  save_plots: true

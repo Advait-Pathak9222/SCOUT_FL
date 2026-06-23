@@ -50,6 +50,32 @@ class Scenario:
     M: int
     R: int
     clients: np.ndarray
+    cluster_assignment: np.ndarray = None
+    compute_het: np.ndarray = None       # per-client compute-speed multiplier (straggler heterogeneity)
+
+
+def _clustered_layout(cfg, rng, K, M, area):
+    """Clustered client viewpoints (the fair-testbed fix).
+
+    Clients in a cluster sit close together, so they observe the central targets
+    from nearly the SAME bearing (angular redundancy) — two high-SNR clients in
+    one cluster carry near-duplicate sensing information. Near clusters are closer
+    to the targets (higher sensing SNR), baiting SNR-only into redundant picks,
+    while a diversity / joint-information selector spreads across clusters and
+    wins on log-det coverage-diversity (and CRB). Returns (clients, targets,
+    cluster_assignment).
+    """
+    bs = np.asarray(cfg.geometry.bs_position, dtype=float)
+    n_clusters = int(cfg.geometry.get("num_clusters", 5))
+    spread = float(cfg.geometry.get("cluster_spread", 3.0))
+    span = float(min(area))
+    angles = 2.0 * np.pi * np.arange(n_clusters) / n_clusters
+    radii = np.linspace(0.12, 0.45, n_clusters) * span   # monotonic: cluster 0 nearest (highest SNR) -> SNR-only piles in
+    centers = bs + np.stack([radii * np.cos(angles), radii * np.sin(angles)], axis=1)
+    cluster_assignment = np.arange(K) % n_clusters
+    clients = np.clip(centers[cluster_assignment] + spread * rng.standard_normal((K, 2)), 0.0, area)
+    targets = np.clip(bs + 0.08 * span * rng.standard_normal((M, 2)), 0.0, area)
+    return clients, targets, cluster_assignment
 
 
 def build_scenario(cfg, rng) -> Scenario:
@@ -57,10 +83,23 @@ def build_scenario(cfg, rng) -> Scenario:
     area = np.asarray(net.area_size, dtype=float)
     K, M, R = int(net.num_clients), int(net.num_targets), int(net.num_regions)
 
-    clients = (sample_positions(rng, K, area) if cfg.geometry.random_clients
-               else np.asarray(cfg.geometry.clients, dtype=float))
-    targets = (sample_positions(rng, M, area) if cfg.geometry.random_targets
-               else np.asarray(cfg.geometry.targets, dtype=float))
+    geom_source = cfg.geometry.get("source", "synthetic")
+    layout = cfg.geometry.get("layout", "random")
+    if geom_source != "synthetic":
+        # real client/target positions from an external sensing dataset (synthetic fallback)
+        from scout_fl.fl.datasets_external import load_sensing_geometry
+        root = cfg.fl.get("data_root", "data") if cfg.get("fl") else "data"
+        clients, targets = load_sensing_geometry(geom_source, K, M, rng,
+                                                 area=float(min(area)), root=root)
+        cluster_assignment = np.arange(K) % int(cfg.geometry.get("num_clusters", 5))
+    elif layout == "clustered":
+        clients, targets, cluster_assignment = _clustered_layout(cfg, rng, K, M, area)
+    else:
+        clients = (sample_positions(rng, K, area) if cfg.geometry.random_clients
+                   else np.asarray(cfg.geometry.clients, dtype=float))
+        targets = (sample_positions(rng, M, area) if cfg.geometry.random_targets
+                   else np.asarray(cfg.geometry.targets, dtype=float))
+        cluster_assignment = np.arange(K)            # each client its own "cluster"
     centers = region_centers(area, R)
     geom = pairwise_geometry(clients, targets)
 
@@ -77,7 +116,7 @@ def build_scenario(cfg, rng) -> Scenario:
     # Placeholder gradient embeddings (FL step replaces with real per-client gradients).
     embeddings = rng.normal(size=(K, 8))
     sim = LearningUtility(embeddings=embeddings).S
-    return Scenario(snr, fim, j0, weights, C, sim, K, M, R, clients)
+    return Scenario(snr, fim, j0, weights, C, sim, K, M, R, clients, cluster_assignment)
 
 
 def run_loop(cfg, scn: Scenario, kind: str, seed: int):

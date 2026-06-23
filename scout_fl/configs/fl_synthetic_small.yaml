@@ -59,6 +59,7 @@ constraints:
   energy_max: null
   power_budget: null
   infeasible_policy: relax_and_log
+  dual_lr: 0.5                  # primal-dual step size for SCOUT-FL v2 soft constraints
 
 aircomp:
   enabled: true                 # use AirComp MSE feasibility gate in SCOUT selection
@@ -77,7 +78,7 @@ energy:
   t_sense: 0.01
 
 selection:
-  methods: [scout_greedy, random, loss, snr_only]   # run each as its own FL training
+  methods: [scout_greedy, scout_v2, random, loss, snr_only]   # scout_greedy=v1 hard-gate, scout_v2=primal-dual
   use_lazy_greedy: true
 
 fl:

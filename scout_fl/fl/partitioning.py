@@ -78,3 +78,26 @@ def partition_report(labels, parts, num_classes: int | None = None) -> dict:
         "mean_top_class_fraction": float(np.mean(fracs.max(axis=1))),
         "class_hist": hist.tolist(),
     }
+
+
+def partition_spatial(labels, cluster_assignment, alpha: float,
+                      rng: np.random.Generator, min_size: int = 1):
+    """Spatial non-IID: clients in the same viewpoint cluster share a label skew.
+
+    Cluster-level Dirichlet partition, then an IID split within each cluster — so
+    nearby clients (same sensing bearing) also share a data distribution, coupling
+    the learning and sensing heterogeneity (the SCOUT/JEDI-relevant non-IID).
+    """
+    labels = np.asarray(labels)
+    cluster_assignment = np.asarray(cluster_assignment)
+    n_clusters = int(cluster_assignment.max()) + 1
+    cluster_parts = partition_dirichlet(labels, n_clusters, alpha, rng, min_size=min_size)
+    parts = [np.array([], dtype=int) for _ in range(len(cluster_assignment))]
+    for c in range(n_clusters):
+        members = np.where(cluster_assignment == c)[0]
+        if len(members) == 0:
+            continue
+        shards = np.array_split(rng.permutation(cluster_parts[c]), len(members))
+        for m, sh in zip(members, shards):
+            parts[m] = np.sort(sh)
+    return parts

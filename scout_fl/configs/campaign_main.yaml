@@ -1,0 +1,125 @@
+# =====================================================================
+# Main campaign config — the full IEEE-style bake-off (CIFAR-10 main track).
+# Run target = 150 rounds, N=100 clients, K/N=10% (budget=10), 3 seeds.
+# Proposed methods (SCOUT-FL v1, SCOUT-FL v2, JEDI-FL) + 13 baselines.
+#
+# GPU (auto-detected device='auto' -> cuda|mps|cpu):
+#   bash scripts/run_macos.sh     scout_fl/configs/campaign_main.yaml     # Apple-silicon MPS
+#   bash scripts/run_nvidia.sh    scout_fl/configs/campaign_main.yaml     # NVIDIA CUDA
+# CPU smoke (tiny, proves end-to-end):
+#   python -m scout_fl.experiments.run_fl_synthetic --config scout_fl/configs/campaign_main.yaml --quick
+#
+# Dirichlet-alpha / SNR / target sweeps are driven by --override (see scripts/ and configs/sweeps/).
+# =====================================================================
+
+experiment: campaign_main
+seed: 0
+seeds: [0, 1, 2]                  # >=3 seeds for the statistical module (mean±std, CI, tests)
+output_dir: outputs
+
+network:
+  num_clients: 100               # N = 100
+  budget: 10                     # K/N = 10%
+  num_targets: 3
+  num_regions: 9
+  area_size: [100.0, 100.0]
+
+geometry:
+  layout: clustered
+  num_clusters: 5
+  cluster_spread: 3.0
+  bs_position: [50.0, 50.0]
+  random_clients: true
+  random_targets: true
+  source: synthetic              # synthetic | deepmimo | deepsense6g | radarscenes
+                                 #   (external -> real client/target positions; synthetic fallback)
+
+channel:
+  model: rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0
+  snr_ref_db: 20.0
+  source: synthetic              # synthetic | deepmimo | deepsense6g | radarscenes
+                                 #   (external -> real per-client comm gains; synthetic fallback)
+
+sensing:
+  ref_snr_db: 20.0
+  ref_distance: 10.0
+  pathloss_exponent: 2.0
+  rcs_mean: 1.0
+  rcs_std: 0.3
+  k_range: 1.0
+  k_angle: 0.05
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:
+  rho: 0.92
+  innovation: 0.08
+  sensing_range: 18.0
+  saturating: exp
+
+objectives:
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5
+  lambda_fairness: 0.3
+
+constraints:
+  crb_max: null
+  mse_agg_max: 0.05
+  latency_max: null
+  energy_max: null
+  power_budget: null
+  infeasible_policy: relax_and_log
+  dual_lr: 0.5
+
+aircomp:
+  enabled: true
+  ota_distortion: true           # AirComp distortion ON for the main campaign
+  ota_noise_scale: 0.5
+  power: 1.0
+  sigma2: 1.0
+  bandwidth: 1.0e+6
+  model_bits: 1.0e+5
+
+energy:
+  cpu_cycles: 1.0e+7
+  cpu_freq: 1.0e+9
+  kappa: 1.0e-27
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  # proposed (3) + 22 named baselines (incl. Asaad TWC-25 + DivFL/DELTA/PO-FL/FairEquityFL).
+  methods: [jedi, scout_v2, scout_greedy,
+            random, ota_fedavg, loss, snr_only,
+            comm_only, aircomp_mse_min, sensing_only,
+            fedcs, oort, fedgcs, fixed_weighted,
+            collabsensefed, ota_fl_iscc, sensing_native,
+            fedavg_iscc, fedsgd_iscc, fed_iscc, asaad,
+            divfl, delta, po_fl, fair_equity, iscc_air_feel,
+            crb_only, fedis]
+  use_lazy_greedy: true
+
+fl:
+  enabled: true
+  dataset: cifar10               # main track; fashion_mnist debug / cifar100 harder via --override
+  data_root: data
+  download: true
+  model: small_cnn
+  optimizer: sgd
+  non_iid: spatial
+  dirichlet_alpha: 0.3           # nominal; sweep {0.1, 0.3, 0.5} via --override
+  rounds: 150                    # 150 rounds for all (campaign target)
+  local_epochs: 1
+  batch_size: 64
+  lr: 0.05
+  device: auto                   # auto -> cuda | mps | cpu
+  probe_batches: 1
+  subsample_train: 20000
+  subsample_test: 4000
+
+logging:
+  save_plots: true
