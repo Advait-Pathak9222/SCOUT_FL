@@ -107,8 +107,13 @@ energy:
   t_sense: 0.01
 
 selection:
-  # proposed (3) + 22 named baselines (incl. Asaad TWC-25 + DivFL/DELTA/PO-FL/FairEquityFL).
-  methods: [jedi, scout_v2, scout_greedy,
+  # proposed (4: SCOUT-v1/v2, JEDI, VISMAYA) + 3 VISMAYA ablations + 22 named baselines.
+  # VISMAYA ablation study: vismaya_no_syn is the make-or-break test — if Syn gives
+  # clear gains under process_noise > 0 (target mobility) vs vismaya_no_syn, the
+  # synergy term's novelty is empirically confirmed.  Run the mobility sweep config
+  # (configs/sweep_mobility_ablation.yaml) to generate the ablation figures.
+  methods: [jedi, vismaya, vismaya_no_syn, vismaya_sense_only, vismaya_learn_only,
+            scout_v2, scout_greedy,
             random, ota_fedavg, loss, snr_only,
             comm_only, aircomp_mse_min, sensing_only,
             fedcs, oort, fedgcs, fixed_weighted,
@@ -117,6 +122,17 @@ selection:
             divfl, delta, po_fl, fair_equity, iscc_air_feel,
             crb_only, fedis]
   use_lazy_greedy: true
+
+# VISMAYA-FL generative model config.
+# Shared by vismaya + all three ablation variants (vismaya_no_syn / vismaya_sense_only /
+# vismaya_learn_only). Ablations override beta / rho_v / sense_scale in code.
+# process_noise > 0 activates non-stationary mode (inflates target covariance per round).
+# Set process_noise ~ 0.01-0.1 for mobility experiments; 0.0 for stationary baseline.
+vismaya:
+  rho_v: 1.0          # auto-calibrated on first round if unchanged; not a preference weight
+  beta: 0.3           # joint synergy weight [0,1]; 0 = no coupling bonus (ablation: override)
+  process_noise: 0.0  # per-round P_m inflation (0 = stationary; see sweep_mobility_ablation.yaml)
+  ema_alpha: 0.1      # EMA smoothing for synergy estimates
 
 fl:
   enabled: true

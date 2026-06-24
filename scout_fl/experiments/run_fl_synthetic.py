@@ -40,6 +40,7 @@ from scout_fl.objectives.learning_utility import LearningUtility
 from scout_fl.objectives.sensing_utility import SensingUtility
 from scout_fl.objectives.total_utility import TotalUtility
 from scout_fl.selection.baselines import BASELINE_REGISTRY
+from scout_fl.selection.generative_model import ClientGenerativeModel
 from scout_fl.selection.loss_based import LossSelector
 from scout_fl.selection.random import RandomSelector
 from scout_fl.selection.scout_greedy import ScoutGreedy
@@ -104,6 +105,17 @@ _OTA_FORCE_OFF = {"random"}
 # FedSGD-ISCC uses the single-step (FedSGD) local-update rule; the rest use FedAvg (E epochs).
 _FEDSGD_METHODS = {"fedsgd_iscc"}
 
+# VISMAYA-FL ablation variants — three component knockouts for the ablation study.
+# Each maps to keyword overrides passed to ClientGenerativeModel.__init__.
+# The make-or-break experiment: vismaya vs vismaya_no_syn under process_noise > 0
+# (mobility). If Syn contributes, the full method should clearly outperform no-Syn
+# on CRB under target movement and on test_acc under sensing-learning drift.
+_VISMAYA_ABLATIONS = {
+    "vismaya_no_syn":     {"beta": 0.0},                        # Ω_S + Ω_L, no synergy
+    "vismaya_sense_only": {"beta": 0.0, "rho_v": 0.0},         # Ω_S only (≈ Kalman-CRB selector)
+    "vismaya_learn_only": {"beta": 0.0, "sense_scale": 0.0},   # Ω_L only (≈ EMC without sensing)
+}
+
 # JEDI-FL ablation variants (component knockouts) for the ablation study. Keys prefixed
 # with "_" are handled in the runner (fairness/gate); the rest pass to JointInformationUtility.
 _JEDI_ABLATIONS = {
@@ -124,6 +136,8 @@ _JEDI_ABLATIONS = {
 _JEDI_DIAG_KEYS = ["jedi_sense_info", "jedi_learn_info", "jedi_fair_bonus",
                    "jedi_learn_frac", "jedi_deficit_mean", "jedi_deficit_max",
                    "jedi_twin_trust", "jedi_twin_corr"]
+_VISMAYA_DIAG_KEYS = ["vis_omega_s_mean", "vis_omega_s_max",
+                      "vis_synergy_mean", "vis_p_trace_mean", "vis_n_seen_frac"]
 
 
 def _jedi_diagnostics(joint, fair_dual, sensing, coverage, learning, selected,
@@ -207,6 +221,25 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     twin_trust, twin_corr, prev_loss = 0.0, 0.0, None
     tw_pred_hist, tw_real_hist = [], []
 
+    # VISMAYA-FL generative model (stateful across rounds; instantiated once per run).
+    # Config keys: vismaya.{rho_v, beta, process_noise, ema_alpha}
+    # Ablation variants (vismaya_no_syn / vismaya_sense_only / vismaya_learn_only) override
+    # specific parameters via _VISMAYA_ABLATIONS but share all other config keys.
+    vis_cfg = cfg.get("vismaya", {}) or {}
+    if method == "vismaya" or method in _VISMAYA_ABLATIONS:
+        _vis_overrides = _VISMAYA_ABLATIONS.get(method, {})
+        vis_model = ClientGenerativeModel(
+            K, scn.M, scn.fim, scn.j0, scn.w,
+            rho_v=float(_vis_overrides.get("rho_v", vis_cfg.get("rho_v", 1.0))),
+            beta=float(_vis_overrides.get("beta", vis_cfg.get("beta", 0.3))),
+            process_noise=float(vis_cfg.get("process_noise", 0.0)),
+            ema_alpha=float(vis_cfg.get("ema_alpha", 0.1)),
+            sense_scale=float(_vis_overrides.get("sense_scale", 1.0)),
+        )
+    else:
+        vis_model = None
+    vis_feats = None   # populated in the selection block each round
+
     for t in range(rounds):
         g_flat = server.global_flat()
         # --- probe every client on the current global model (loss + grad embedding) ---
@@ -253,6 +286,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
 
         # --- select ---
         diag = dict.fromkeys(_JEDI_DIAG_KEYS, 0.0)             # JEDI-FL diagnostics (paper figures)
+        vis_diag = dict.fromkeys(_VISMAYA_DIAG_KEYS, 0.0)      # VISMAYA-FL diagnostics
         tic = time.perf_counter()
         if method == "scout_greedy":
             feasible = None
@@ -279,6 +313,21 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
                                                      feasible=feasible)
             diag = _jedi_diagnostics(joint, fair_dual, sensing, coverage, learning, res.selected,
                                      twin_trust=twin_trust, twin_corr=twin_corr)
+        elif method == "vismaya" or method in _VISMAYA_ABLATIONS:
+            # VISMAYA-FL (full + ablations): top-K by innovation score.
+            # Ablations zero out individual terms via sense_scale / rho_v / beta at init time.
+            # Build features from current probe: [1, loss_z, grad_norm_z, channel_z, recency]
+            vis_feats = vis_model.build_features(
+                losses, np.linalg.norm(embs, axis=1), np.asarray(g))
+            vis_scores = vis_model.score_all(vis_feats)
+            # Primal-dual soft MSE penalty (same as SCOUT-v2; no hard gate)
+            mse_k = np.array([aggregation_mse(g, [k], power=P, sigma2=sigma2) for k in range(K)])
+            resource_cost = duals.mu.get("mse", 0.0) * np.maximum(0.0, mse_k - (mse_eps or 0.0))
+            net_scores = vis_scores - resource_cost
+            order = np.argsort(-net_scores)
+            selected_arr = sorted(int(order[i]) for i in range(budget))
+            res = type("_R", (), {"selected": selected_arr})()
+            vis_diag = vis_model.diagnostics()
         elif method == "random":
             res = RandomSelector().select(num_clients=K, budget=budget, rng=rng)
         elif method == "loss":
@@ -313,7 +362,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         tic = time.perf_counter()
         ota_this = True if method in _OTA_FORCE_ON else (False if method in _OTA_FORCE_OFF else ota_on)
         mse = aggregation_mse(g, selected, power=P, sigma2=sigma2) if aircomp_on else 0.0
-        if method == "scout_v2" and aircomp_on:
+        if method in ("scout_v2", "vismaya", *_VISMAYA_ABLATIONS) and aircomp_on:
             duals.update({"mse": float(mse)})                  # dual ascent on realized violation
         agg = aggregate(updates, counts, ota=ota_this, mse=mse, scale=ota_scale, rng=rng)
         server.apply_aggregated_update(g_flat, agg)
@@ -366,6 +415,17 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             "round_time": round(probe_time + sel_time + train_time + agg_time, 4),
         }
         row.update(diag)                                       # JEDI-FL diagnostics
+        row.update(vis_diag)                                   # VISMAYA-FL diagnostics
+
+        # VISMAYA generative model update: call AFTER agg (need actual grad norms).
+        # All ablation variants share the same update logic so their P_m and ridge
+        # twin evolve correctly — only the scoring weights differ, not the state dynamics.
+        if vis_model is not None and vis_feats is not None:
+            _actual_gnorms = np.zeros(K)
+            for _i, _k in enumerate(selected):
+                _actual_gnorms[_k] = float(np.linalg.norm(updates[_i]))
+            vis_model.update(list(selected), vis_feats, _actual_gnorms)
+
         rows.append(row)
         if out_path is not None:                               # checkpoint after every round (resumable)
             save_unit(out_path, meta or {}, rows, complete=False)
