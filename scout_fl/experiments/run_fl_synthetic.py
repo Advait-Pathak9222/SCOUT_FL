@@ -241,6 +241,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     vis_feats = None   # populated in the selection block each round
 
     for t in range(rounds):
+        print(f"[run] method={method} seed={base_seed} round={t + 1}/{rounds}", flush=True)
         g_flat = server.global_flat()
         # --- probe every client on the current global model (loss + grad embedding) ---
         tic = time.perf_counter()
@@ -475,6 +476,7 @@ def run_unit(method, cfg, scn, g, client_datasets, x_te, y_te, input_shape, num_
             part = participation_from_rows(rows, scn.K)
             print(f"  [resume] {point}/{method} seed{seed}: loaded {len(rows)} rounds from {path}")
             return rows, part, cached["objectives"]
+    print(f"  [start] {point}/{method} seed{seed}: {int(cfg.fl.rounds)} rounds", flush=True)
     meta = {"method": method, "seed": int(seed), "point": point, "tag": tag, "K": scn.K,
             "budget": int(cfg.network.budget), "rounds": int(cfg.fl.rounds),
             "dataset": cfg.fl.dataset, "model": cfg.fl.model}

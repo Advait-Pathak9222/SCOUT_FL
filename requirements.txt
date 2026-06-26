@@ -9,3 +9,4 @@ matplotlib>=3.7
 torch>=2.0
 torchvision>=0.15
 pytest>=7.0          # tests only; not needed to run the experiments
+attrs>=23.1          # pytest runtime dependency; older attrs breaks pytest import
