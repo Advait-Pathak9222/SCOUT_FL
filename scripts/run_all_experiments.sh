@@ -7,6 +7,8 @@
 #   DEVICE   auto (default) | mps | cuda | cpu
 #   --quick  tiny smoke of every step (proves the pipeline end-to-end fast)
 #   --from N start at step N (1..5); earlier completed work is skipped anyway
+#   --skip-data do not run the dataset download/verification preflight
+#   --no-download verify local datasets only; do not download missing files
 #
 # Steps:
 #   1  Ablation studies: JEDI-FL component knockouts + VISMAYA-FL synergy ablation
@@ -22,6 +24,7 @@
 #   bash scripts/run_all_experiments.sh cuda --from 2   # skip ablation, start at bake-off
 #   bash scripts/run_all_experiments.sh cuda --from 3   # resume at the OFAT campaign
 #   bash scripts/run_all_experiments.sh cuda 'seeds=[0,1,2,3,4]'
+#   bash scripts/run_all_experiments.sh cuda --no-download   # fail/verify locally instead of downloading
 #
 # RESUMABLE: every (point, method, seed) federated training is checkpointed per-round
 # to runs/<tag>/<point>/<method>__seed<seed>.json. Kill the process any time and just
@@ -33,11 +36,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DEVICE="auto"; QUICK=""; FROM=1; EXTRA_OVERRIDES=()
+DEVICE="auto"; QUICK=""; FROM=1; PREPARE_DATA=1; DOWNLOAD_FLAG=""; EXTRA_OVERRIDES=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --quick) QUICK="--quick";;
         --from) shift; FROM="${1:-1}";;
+        --skip-data|--skip-datasets|--skip-data-prepare) PREPARE_DATA=0;;
+        --no-download) DOWNLOAD_FLAG="--no-download"; EXTRA_OVERRIDES+=("fl.download=false");;
         auto|mps|cuda|cpu) DEVICE="$1";;
         *=*) EXTRA_OVERRIDES+=("$1");;
         *) echo "unknown arg: $1"; exit 2;;
@@ -55,6 +60,16 @@ OVERRIDES=("fl.device=$DEVICE" "${EXTRA_OVERRIDES[@]}")
 
 banner() { echo; echo "============================================================"; echo "  $*"; echo "============================================================"; }
 echo "[run_all] device=$DEVICE  quick=${QUICK:-no}  from step $FROM  overrides=${OVERRIDES[*]}  (resumable; re-run to continue)"
+
+# --- Step 0: dataset preflight -------------------------------------------------
+# The full campaign touches CIFAR-10/100, Fashion-MNIST, EMNIST, and UCI-HAR.
+# Download/verify them up front so HPC logs show progress before long training starts.
+if [ "$PREPARE_DATA" -eq 1 ] && [ "$FROM" -le 3 ]; then
+    banner "Step 0/5  Dataset preflight (download/verify with progress)"
+    python -m scout_fl.experiments.prepare_datasets $QUICK $DOWNLOAD_FLAG --override "${OVERRIDES[@]}"
+else
+    echo "[run_all] dataset preflight skipped"
+fi
 
 # --- Step 1: ablation studies (JEDI component knockouts + VISMAYA synergy ablation) ---
 if [ "$FROM" -le 1 ]; then
