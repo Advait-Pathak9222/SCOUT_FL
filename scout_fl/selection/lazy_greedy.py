@@ -13,7 +13,16 @@ The ``utility`` must expose the incremental API:
 from __future__ import annotations
 
 import heapq
+import math
 from typing import Iterable
+
+
+def _safe_gain(x) -> float:
+    try:
+        gain = float(x)
+    except (TypeError, ValueError):
+        return float("-inf")
+    return gain if math.isfinite(gain) else float("-inf")
 
 
 def lazy_greedy(utility, num_clients: int, budget: int,
@@ -25,7 +34,7 @@ def lazy_greedy(utility, num_clients: int, budget: int,
     heap = []
     evals = 0
     for k in cand:
-        gain = utility.marginal_gain(state, k)
+        gain = _safe_gain(utility.marginal_gain(state, k))
         evals += 1
         heap.append((-gain, k, 0))  # (neg gain, client, freshness generation)
     heapq.heapify(heap)
@@ -39,7 +48,7 @@ def lazy_greedy(utility, num_clients: int, budget: int,
             state = utility.add(state, k)
             generation += 1
         else:
-            fresh = utility.marginal_gain(state, k)
+            fresh = _safe_gain(utility.marginal_gain(state, k))
             evals += 1
             heapq.heappush(heap, (-fresh, k, generation))
     return selected, state, evals

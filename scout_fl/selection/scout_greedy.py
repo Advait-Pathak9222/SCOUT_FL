@@ -12,11 +12,21 @@ API: init_state / add / marginal_gain.
 """
 from __future__ import annotations
 
+import math
 import time
 from typing import Callable
 
 from scout_fl.selection.base import Selector, SelectionResult
 from scout_fl.selection.lazy_greedy import lazy_greedy
+
+
+def _safe_score(x) -> float:
+    """Convert a marginal score to a sortable float; non-finite scores are worst."""
+    try:
+        score = float(x)
+    except (TypeError, ValueError):
+        return float("-inf")
+    return score if math.isfinite(score) else float("-inf")
 
 
 def naive_greedy(utility, num_clients: int, budget: int, candidates=None):
@@ -27,10 +37,12 @@ def naive_greedy(utility, num_clients: int, budget: int, candidates=None):
     while remaining and len(selected) < budget:
         best_k, best_gain = None, float("-inf")
         for k in remaining:
-            gain = utility.marginal_gain(state, k)
+            gain = _safe_score(utility.marginal_gain(state, k))
             evals += 1
             if gain > best_gain:
                 best_k, best_gain = k, gain
+        if best_k is None:
+            best_k = min(remaining)
         selected.append(best_k)
         state = utility.add(state, best_k)
         remaining.discard(best_k)
@@ -54,10 +66,12 @@ def constrained_greedy(utility, num_clients: int, budget: int,
             break
         best_k, best_gain = None, float("-inf")
         for k in pool:
-            gain = utility.marginal_gain(state, k)
+            gain = _safe_score(utility.marginal_gain(state, k))
             evals += 1
             if gain > best_gain:
                 best_k, best_gain = k, gain
+        if best_k is None:
+            best_k = min(pool)
         selected.append(best_k)
         state = utility.add(state, best_k)
         remaining.discard(best_k)
@@ -73,10 +87,14 @@ def penalized_greedy(utility, num_clients: int, budget: int,
     while remaining and len(selected) < budget:
         best_k, best_score = None, float("-inf")
         for k in remaining:
-            score = utility.marginal_gain(state, k) - float(penalty_fn(selected, k))
+            gain = _safe_score(utility.marginal_gain(state, k))
+            penalty = _safe_score(penalty_fn(selected, k))
+            score = float("-inf") if not math.isfinite(gain + penalty) else gain - penalty
             evals += 1
             if score > best_score:
                 best_k, best_score = k, score
+        if best_k is None:
+            best_k = min(remaining)
         selected.append(best_k)
         state = utility.add(state, best_k)
         remaining.discard(best_k)

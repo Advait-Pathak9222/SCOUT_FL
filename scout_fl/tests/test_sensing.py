@@ -11,7 +11,7 @@ import numpy as np
 from scout_fl.analysis.verify_submodularity import verify_submodular
 from scout_fl.objectives.sensing_utility import SensingUtility
 from scout_fl.selection.lazy_greedy import lazy_greedy
-from scout_fl.selection.scout_greedy import ScoutGreedy, naive_greedy
+from scout_fl.selection.scout_greedy import ScoutGreedy, naive_greedy, penalized_greedy
 from scout_fl.sim.crb import logdet_spd
 from scout_fl.sim.fim import db_to_linear, per_client_target_fim, prior_fim
 from scout_fl.sim.geometry import pairwise_geometry
@@ -100,3 +100,24 @@ def test_reproducible_selection():
     s1 = ScoutGreedy().select(utility=u1, num_clients=u1.K, budget=5).selected
     s2 = ScoutGreedy().select(utility=u2, num_clients=u2.K, budget=5).selected
     assert s1 == s2
+
+
+class _NanUtility:
+    def init_state(self):
+        return []
+
+    def marginal_gain(self, state, k):
+        return float("nan")
+
+    def add(self, state, k):
+        return state + [k]
+
+
+def test_greedy_handles_nonfinite_marginals_without_none_selection():
+    util = _NanUtility()
+    assert naive_greedy(util, 4, 3)[0] == [0, 1, 2]
+    assert lazy_greedy(util, 4, 3)[0] == [0, 1, 2]
+    assert penalized_greedy(util, 4, 3, penalty_fn=lambda S, k: float("nan"))[0] == [0, 1, 2]
+    res = ScoutGreedy(use_lazy=False).select(
+        utility=util, num_clients=4, budget=3, feasible=lambda S, k: False)
+    assert res.selected == [0, 1, 2]
