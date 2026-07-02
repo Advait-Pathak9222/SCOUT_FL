@@ -37,8 +37,20 @@ def test_registry_has_all_named_baselines():
                 "fedgcs", "fixed_weighted", "collabsensefed", "ota_fl_iscc", "sensing_native",
                 "ota_fedavg", "fedavg_iscc", "fedsgd_iscc", "fed_iscc", "asaad",
                 "divfl", "delta", "po_fl", "fair_equity", "iscc_air_feel",
-                "crb_only", "fedis"}
-    assert expected == set(BASELINE_REGISTRY)
+                "crb_only", "fedis",
+                "reca"}                       # RECA-FL: OUR proposed method, exposed via the
+    assert expected == set(BASELINE_REGISTRY)  # registry wrapper for the shared FL bake-off
+
+
+def test_reca_registry_selector_returns_valid_selection():
+    ctx = _ctx()
+    res = BASELINE_REGISTRY["reca"].select(**ctx)
+    assert len(res.selected) == ctx["budget"]
+    assert len(set(res.selected)) == ctx["budget"]
+    assert all(0 <= k < ctx["K"] for k in res.selected)
+    # RECA diagnostics must be present and finite for the per-round artifact rows
+    for key in ("reca_risk", "reca_mismatch", "reca_progress", "reca_trigger_score"):
+        assert np.isfinite(res.info[key])
 
 
 def test_pofl_favours_weak_channels_relative_to_gradient():

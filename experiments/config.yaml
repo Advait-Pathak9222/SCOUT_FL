@@ -73,18 +73,22 @@ tempo:
     sigma_p: [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
     seeds: sweep
     policies: [tempo_threshold, tempo_dpp, best_oracle, static]   # best_oracle filled from E-T1
-  et5:                                           # E-T5 ablations
-    enabled: true
-    datasets: [cifar10]
+  et5:                                           # E-T5 ablations (design §1.5: horizon, V,
+    enabled: true                                # P_max sweep, mis-specified Q, noisy L_t,
+    datasets: [cifar10]                          # inner-selector swap)
     sigma_p: [0.05]
     missions: [sustained]
     seeds: sweep
     mpc_horizons: [5, 10, 20]
     dpp_V: [0.5, 1.0, 2.0]
-  et6:                                           # E-T6 online-regret (long horizon)
+    p_max_sweep: [5.0, 10.0, 40.0]               # traces the new frontier (20.0 = main point)
+    q_mis_scales: [0.5, 2.0]                     # controller believes 0.5x / 2x the true sigma_p
+    l_noise: [0.5]                               # log-normal noise std on the L_t estimate
+    inner_swap: true                             # dpp with plain greedy (no primal-dual MSE)
+  et6:                                           # E-T6 online-regret (long horizon, 2 configs)
     enabled: true
     datasets: [cifar10]
-    sigma_p: [0.05]
+    sigma_p: [0.05, 0.1]
     rounds: 300
     seeds: sweep
 
@@ -123,6 +127,15 @@ cloak:
     r_floors: [1.0, 10.0]
     seeds: sweep
     modes: [uncapped, m1]
+  ec6:                                            # E-C6 robustness (design §2.6): imperfect CSI
+    enabled: true                                 # at BS. (Sync error is E-C2a; colluding 2-3
+    datasets: [cifar10]                           # receivers is E-C2b; selection-side-channel
+    csi_error: [0.1, 0.3]                         # decomposition rides on E-C4 via side_snr.)
+    r_floor: 10.0
+    modes: [m1_m2]
+    seeds: sweep
+  ec4_side_snr: 1.0                               # E-C6 side-channel modeled effective SNR per
+                                                  # selection event (vs uplink median ~25)
 
 # ---------------------------------------------------------------- gates
 gates:

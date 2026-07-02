@@ -127,32 +127,55 @@ def tempo_units(cfg):
                                                "dataset": ds_map[dsk], "sigma_p": sp,
                                                "mission": "sustained", "p_max": p_max}))
 
-    # E-T5 ablations (MPC horizon, DPP V)
+    # E-T5 ablations (design §1.5): MPC horizon, DPP V, P_max sweep, mis-specified Q,
+    # noisy L_t, inner-selector swap. Extra per-unit knobs ride in params and are
+    # threaded through run_unit -> run_tempo_seed.
     t5 = tp.get("et5", {})
     if t5.get("enabled"):
         for dsk in t5["datasets"]:
             for sp in t5["sigma_p"]:
                 for mission in t5["missions"]:
                     point = f"ET5_{dsk}_sp{sp:g}_{mission}"
-                    specs = [("controller", {"name": f"mpc_H{h}", "kind": "mpc", "horizon": h})
+                    dpp = {"kind": "dpp", "V": 1.0}
+                    specs = [("controller", {"name": f"mpc_H{h}", "kind": "mpc", "horizon": h}, {})
                              for h in t5["mpc_horizons"]]
-                    specs += [("controller", {"name": f"dpp_V{v:g}", "kind": "dpp", "V": v})
+                    specs += [("controller", {"name": f"dpp_V{v:g}", "kind": "dpp", "V": v}, {})
                               for v in t5["dpp_V"]]
-                    for ptype, pspec in specs:
+                    specs += [("controller", dict(dpp, name=f"dpp_pmax{pm:g}"), {"p_max": pm})
+                              for pm in t5.get("p_max_sweep", [])]
+                    specs += [("controller", dict(dpp, name=f"dpp_qmis{s:g}x"),
+                               {"sigma_p_ctrl": s * sp})
+                              for s in t5.get("q_mis_scales", [])]
+                    specs += [("controller", dict(dpp, name=f"dpp_noisyL{n:g}"), {"l_noise": n})
+                              for n in t5.get("l_noise", [])]
+                    if t5.get("inner_swap"):
+                        specs.append(("controller", dict(dpp, name="dpp_innerplain"),
+                                      {"inner": "plain"}))
+                    for ptype, pspec, extra in specs:
                         for seed in _seeds(cfg, t5["seeds"]):
-                            units.append(_fl_unit(rr, "tempo", "E-T5", "tempo", point, pspec["name"], seed,
-                                                  {"policy": {"type": ptype, "spec": pspec},
-                                                   "dataset": ds_map[dsk], "sigma_p": sp,
-                                                   "mission": mission, "p_max": p_max}))
+                            params = {"policy": {"type": ptype, "spec": pspec},
+                                      "dataset": ds_map[dsk], "sigma_p": sp,
+                                      "mission": mission, "p_max": p_max}
+                            params.update(extra)
+                            units.append(_fl_unit(rr, "tempo", "E-T5", "tempo", point,
+                                                  pspec["name"], seed, params))
 
-    # E-T6 online regret (long horizon)
+    # E-T6 online regret (long horizon). The reference set (static + oracle schedules)
+    # provides the best-schedule-in-hindsight the DPP regret is measured against
+    # (design §1.5: dynamic oracle computed offline from the E-T1 grid + local search).
     t6 = tp.get("et6", {})
     if t6.get("enabled"):
+        et6_policies = [
+            ("controller", {"name": "tempo_dpp", "kind": "dpp", "V": 1.0}),
+            ("schedule", {"name": "static_lam0.5", "kind": "static", "lam": 0.5}),
+            ("schedule", {"name": "oracle_lts_tau100", "kind": "learn_then_sense", "tau": 100}),
+            ("schedule", {"name": "oracle_lts_tau200", "kind": "learn_then_sense", "tau": 200}),
+            ("schedule", {"name": "oracle_burst_b5_p25", "kind": "bursting", "burst_len": 5, "period": 25}),
+        ]
         for dsk in t6["datasets"]:
             for sp in t6["sigma_p"]:
                 point = f"ET6_{dsk}_sp{sp:g}"
-                for ptype, pspec in [("controller", {"name": "tempo_dpp", "kind": "dpp", "V": 1.0}),
-                                     ("schedule", {"name": "static_lam0.5", "kind": "static", "lam": 0.5})]:
+                for ptype, pspec in et6_policies:
                     for seed in _seeds(cfg, t6["seeds"]):
                         units.append(_fl_unit(rr, "tempo", "E-T6", "tempo", point, pspec["name"], seed,
                                               {"policy": {"type": ptype, "spec": pspec},
@@ -206,6 +229,20 @@ def cloak_units(cfg):
                         units.append(_fl_unit(rr, "cloak", "E-C5", "cloak", point, method, seed,
                                               {"mode": mode, "r_floor": rf, "dataset": ds_map[dsk],
                                                "rounds": c5.get("rounds", 300)}))
+
+    # E-C6 robustness: imperfect CSI at the BS (design §2.6). Sync error / colluding
+    # receivers / side-channel decomposition are analytic (E-C2a/b, E-C4 side_snr).
+    c6 = ck.get("ec6", {})
+    if c6.get("enabled"):
+        for dsk in c6["datasets"]:
+            point = f"EC6_{dsk}"
+            for mode in c6["modes"]:
+                for ce in c6["csi_error"]:
+                    method = f"{mode}__r{c6['r_floor']:g}__csi{ce:g}"
+                    for seed in _seeds(cfg, c6["seeds"]):
+                        units.append(_fl_unit(rr, "cloak", "E-C6", "cloak", point, method, seed,
+                                              {"mode": mode, "r_floor": c6["r_floor"],
+                                               "dataset": ds_map[dsk], "csi_error": ce}))
     return units
 
 
@@ -223,6 +260,7 @@ def analytic_units(cfg):
         units.append(_analytic_unit(orr, "ec4", "E-C4", "cloak/ec4",
                                     {"point": ck["ec4"]["point"], "seeds": _seeds(cfg, ck["ec4"]["seeds"]),
                                      "base_config": cfg["base_config"],
+                                     "side_snr": ck.get("ec4_side_snr", 1.0),
                                      "rerun_top9_if_missing": ck["ec4"].get("rerun_top9_if_missing", True)}))
     if cfg["tempo"].get("enabled", True):
         units.append(_analytic_unit(orr, "et2", "E-T2", "tempo/et2",
@@ -275,6 +313,7 @@ def apply_smoke(cfg) -> dict:
         tp.get(k, {})["enabled"] = False
     ck["ec3"].update(datasets=["cifar10"], r_floors=[1.0], modes=["uncapped", "m1"])
     ck["ec2c"].update(datasets=["cifar10"], rounds=sm["rounds"], modes=["m1", "m1_m2"])
-    ck.get("ec5", {})["enabled"] = False
+    for k in ("ec5", "ec6"):
+        ck.get(k, {})["enabled"] = False
     ck["entanglement"]["n_mc"] = 20
     return c

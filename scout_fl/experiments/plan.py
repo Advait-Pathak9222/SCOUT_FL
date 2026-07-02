@@ -22,8 +22,8 @@ from scout_fl.experiments import units as U
 # If a gate FAILS in strict mode, run_all.sh excludes these.
 GATE_DOWNSTREAM = {
     "GATE1": ["E-T3", "E-T4", "E-T5", "E-T6"],                # TEMPO Phase 2/3
-    "GATE2": ["E-C3", "E-C5"],                                # CloakFL constructive frontier
-    "GATE3": ["E-C3", "E-C5"],                                # (E-C4 runs regardless — design §2.6)
+    "GATE2": ["E-C3", "E-C5", "E-C6"],                        # CloakFL constructive frontier
+    "GATE3": ["E-C3", "E-C5", "E-C6"],                        # (E-C4 runs regardless — design §2.6)
 }
 
 

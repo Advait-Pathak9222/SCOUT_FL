@@ -1,2 +1,0 @@
-[run ] ec4:E-C4  (E-C4, stage=analytic)
-[E-C4] scored 160 units across 32 methods; worst offender (most-exposed client): aircomp_mse_min (0.09 m)

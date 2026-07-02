@@ -11,6 +11,10 @@ data/
 # --- experiment outputs + resumable run store (regenerated) ---
 outputs/
 runs/
+runs_smoke/
+
+# --- transient stage/unit logs (regenerated every run) ---
+logs/
 
 # --- downloaded papers (license-gated; not redistributable) ---
 Papers/

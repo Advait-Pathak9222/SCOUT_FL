@@ -1,5 +1,5 @@
 # TEMPO-FL / CloakFL — Decision Summary
-_Auto-generated 2026-07-02T21:28:58 from run artifacts. Every value is computed; missing units are listed, never imputed._
+_Auto-generated 2026-07-03T02:26:39 from run artifacts. Every value is computed; missing units are listed, never imputed._
 
 ## Pre-registered gate verdicts (design §1.5, §2.6)
 ### GATE 1: GATE1_dominance
@@ -39,6 +39,6 @@ _No E-C3 frontier units present (gates not passed, or not yet run)._
 | iscc_air_feel | 0.09 | 141.42 |
 
 ## Completeness
-- Units enumerated: **2835**; complete: **5**; missing: **2830**.
+- Units enumerated: **2920**; complete: **5**; missing: **2915**.
 - First missing (up to 20): `tempo:ET1_cifar10_sp0:oracle_lts_tau30:s0`, `tempo:ET1_cifar10_sp0:oracle_lts_tau30:s1`, `tempo:ET1_cifar10_sp0:oracle_lts_tau30:s2`, `tempo:ET1_cifar10_sp0:oracle_lts_tau30:s3`, `tempo:ET1_cifar10_sp0:oracle_lts_tau30:s4`, `tempo:ET1_cifar10_sp0:oracle_lts_tau50:s0`, `tempo:ET1_cifar10_sp0:oracle_lts_tau50:s1`, `tempo:ET1_cifar10_sp0:oracle_lts_tau50:s2`, `tempo:ET1_cifar10_sp0:oracle_lts_tau50:s3`, `tempo:ET1_cifar10_sp0:oracle_lts_tau50:s4`, `tempo:ET1_cifar10_sp0:oracle_lts_tau75:s0`, `tempo:ET1_cifar10_sp0:oracle_lts_tau75:s1`, `tempo:ET1_cifar10_sp0:oracle_lts_tau75:s2`, `tempo:ET1_cifar10_sp0:oracle_lts_tau75:s3`, `tempo:ET1_cifar10_sp0:oracle_lts_tau75:s4`, `tempo:ET1_cifar10_sp0:oracle_lts_tau100:s0`, `tempo:ET1_cifar10_sp0:oracle_lts_tau100:s1`, `tempo:ET1_cifar10_sp0:oracle_lts_tau100:s2`, `tempo:ET1_cifar10_sp0:oracle_lts_tau100:s3`, `tempo:ET1_cifar10_sp0:oracle_lts_tau100:s4`
 - Missing/failed units are reported as missing (design §0.3) — not imputed.

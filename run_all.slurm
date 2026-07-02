@@ -42,7 +42,7 @@ import json,sys,os
 p=sys.argv[1]
 if not os.path.exists(p): print(""); sys.exit()
 v=json.load(open(p)); excl=set()
-DOWN={"GATE1":["E-T3","E-T4","E-T5","E-T6"],"GATE2":["E-C3","E-C5"],"GATE3":["E-C3","E-C5"]}
+DOWN={"GATE1":["E-T3","E-T4","E-T5","E-T6"],"GATE2":["E-C3","E-C5","E-C6"],"GATE3":["E-C3","E-C5","E-C6"]}
 for g,e in DOWN.items():
     if v.get(g,{}).get("pass") is False: excl.update(e)
 print(",".join(sorted(excl)))

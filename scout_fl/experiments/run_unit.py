@@ -62,7 +62,9 @@ def _run_tempo(cfg, unit):
                                       M=int(scfg.network.num_targets), p_max=p["p_max"])
     run_tempo_seed(scfg, ds, unit["seed"], unit["method"], schedule=schedule, controller=controller,
                    sigma_p=p["sigma_p"], p_max=p["p_max"], mission=p["mission"],
-                   runs_root=_abs(cfg["runs_root"]), tag=unit["tag"], point=unit["point"])
+                   runs_root=_abs(cfg["runs_root"]), tag=unit["tag"], point=unit["point"],
+                   sigma_p_ctrl=p.get("sigma_p_ctrl"), l_noise=p.get("l_noise", 0.0),
+                   inner=p.get("inner", "v2"))
 
 
 def _run_cloak(cfg, unit):
@@ -71,7 +73,8 @@ def _run_cloak(cfg, unit):
     scfg = _cfg_for_fl(cfg, p)
     ds = _load_ds(scfg)
     run_cloak_seed(scfg, ds, unit["seed"], p["mode"], p["r_floor"],
-                   runs_root=_abs(cfg["runs_root"]), tag=unit["tag"], point=unit["point"], method=unit["method"])
+                   runs_root=_abs(cfg["runs_root"]), tag=unit["tag"], point=unit["point"],
+                   method=unit["method"], csi_error=p.get("csi_error", 0.0))
 
 
 def _run_analytic(cfg, unit):
@@ -90,7 +93,8 @@ def _run_analytic(cfg, unit):
     elif prog == "ec4":
         from scout_fl.cloak.ec4_measurement import run_ec4
         run_ec4(out_root / "cloak/ec4", runs_root=campaign_runs, point=p["point"],
-                base_config=str(REPO / p["base_config"]), seeds=set(p["seeds"]))
+                base_config=str(REPO / p["base_config"]), seeds=set(p["seeds"]),
+                side_snr=p.get("side_snr", 1.0))
     elif prog == "et2":
         from scout_fl.tempo.rescore import gradient_decay_study
         gradient_decay_study(out_root / "tempo/et2", base_config=str(REPO / p["base_config"]),

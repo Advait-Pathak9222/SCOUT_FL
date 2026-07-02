@@ -14,10 +14,16 @@ Two new sensing-aware FL methods for ISAC networks:
 ## TL;DR — launch on the cluster
 
 ```bash
+bash run_tests.sh --full               # all tests for RECA-FL + TEMPO-FL + CloakFL (~20 s)
 NUM_GPUS=4 bash run_all.sh              # full campaign, strict gates (default)
 NUM_GPUS=4 bash run_all.sh --resume    # continue after a kill (every unit is checkpointed)
 # come back to:  analysis/decision_summary.md
 ```
+
+`run_tests.sh` is the CI-style gate for all three proposed methods (`--with-smoke` adds
+tiny functional end-to-end runs of each; `--full` adds the whole repo suite). RECA-FL's
+own campaign is separate: `bash scripts/reca_twc_quick.sh` (smoke) /
+`bash scripts/reca_twc_nvidia.sh` (full TWC campaign, RECA-only by design).
 
 CPU/MPS or a single box: omit `NUM_GPUS` (defaults to 0 → worker pool, no GPU pinning).
 SLURM cluster: `sbatch run_all.slurm` (array job; the plain bash path also works standalone).
@@ -69,14 +75,15 @@ E-C4 always runs). **`--gates-soft`:** log the verdict and run everything.
 | E-T1-static | static frontier re-scored through the tracker (GATE 1 null) | `outputs/tempo_cloak/analytic/tempo/static_frontier/` |
 | E-T3 | mobility regime sweep | `runs/tempo/ET3_*/` |
 | E-T4 | main controller bake-off | `runs/tempo/ET4_*/` |
-| E-T5 | ablations (MPC horizon, DPP V) | `runs/tempo/ET5_*/` |
-| E-T6 | online-regret (300 rd) | `runs/tempo/ET6_*/` |
+| E-T5 | ablations (MPC horizon, DPP V, P_max sweep, mis-specified Q, noisy L_t, inner-selector swap) | `runs/tempo/ET5_*/` |
+| E-T6 | online-regret (300 rd, 2 configs + hindsight-oracle references) | `runs/tempo/ET6_*/`, figure `et6_regret` |
 | E-C1 | entanglement kill test (GATE 2) | `outputs/tempo_cloak/analytic/cloak/ec1/` |
 | E-C2a/b | dither validation (GATE 3) | `outputs/tempo_cloak/analytic/cloak/ec2/` |
 | E-C2c | M2 on/off FL run (acc delta ≈ 0) | `runs/cloak/EC2c_*/` |
 | E-C3 | privacy–utility frontier (headline) | `runs/cloak/EC3_*/` |
 | E-C4 | "every method localizes its clients" | `outputs/tempo_cloak/analytic/cloak/ec4/` |
 | E-C5 | composition & rotation (300 rd) | `runs/cloak/EC5_*/` |
+| E-C6 | robustness: imperfect CSI (train), sync error (E-C2a), 2–3 colluding receivers (E-C2b), selection-side-channel decomposition (E-C4 `side_snr`) | `runs/cloak/EC6_*/`, `.../cloak/ec4/` |
 | — | figures + stat dumps | `outputs/tempo_cloak/figures/*.{pdf,png,csv}` |
 | — | **verdicts** | `analysis/decision_summary.md`, `analysis/gate_verdicts.json` |
 | — | schema discovery | `analysis/schema_report.md` (+ `.json`) |
@@ -86,7 +93,7 @@ E-C4 always runs). **`--gates-soft`:** log the verdict and run everything.
 [experiments/config.yaml](experiments/config.yaml) sets the scale (seed counts,
 rounds, dataset subsets, which experiments run); `scout_fl/experiments/units.py` expands
 it into the flat unit grid. Seed policy: **10 seeds** for headline comparisons
-(E-T4, E-C3), **5** for sweeps/ablations. Full grid ≈ 2,830 FL trainings + 5 analytic
+(E-T4, E-C3), **5** for sweeps/ablations. Full grid ≈ 2,915 FL trainings + 5 analytic
 units; inspect it with:
 
 ```bash

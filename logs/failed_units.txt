@@ -1,2 +1,0 @@
-ec1:E-C1
-ec2ab:E-C2ab

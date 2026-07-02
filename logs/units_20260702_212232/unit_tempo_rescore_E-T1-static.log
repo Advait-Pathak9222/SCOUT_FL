@@ -1,2 +1,0 @@
-[run ] tempo_rescore:E-T1-static  (E-T1-static, stage=analytic)
-[E-T1-static] re-scored 160 static units at A_datasets=cifar10 (sigma_p=0.0) -> 32 methods

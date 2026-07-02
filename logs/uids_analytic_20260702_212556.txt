@@ -1,5 +1,0 @@
-ec1:E-C1
-ec2ab:E-C2ab
-ec4:E-C4
-et2:E-T2
-tempo_rescore:E-T1-static

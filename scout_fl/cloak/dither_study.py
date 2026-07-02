@@ -39,7 +39,7 @@ def aggregate_invariance(dim=200, n_selected=10, sigma_sync_grid=(0.0, 0.001, 0.
 
 
 def eavesdropper_inflation(sigma_d2_grid=(0.0, 0.1, 0.25, 0.5, 0.9, 1.5, 3.0),
-                           snr_eve=10.0, receivers=(1, 3)):
+                           snr_eve=10.0, receivers=(1, 2, 3)):    # E-C6: 2-3 colluding receivers
     """Median eavesdropper per-client CRB inflation vs dither variance, per #receivers."""
     rows = []
     for s2 in sigma_d2_grid:

@@ -173,6 +173,48 @@ def fig_dither(fig_dir, analytic_dir):
     _save(plt, fig, fig_dir, "dither_validation")
 
 
+# ---------------------------------------------------------------- E-T6 regret curve
+def fig_regret(fig_dir, runs_root):
+    """E-T6 empirical regret: TEMPO-DPP vs the best schedule in hindsight (design §1.5).
+
+    The hindsight oracle is the reference policy (static + oracle schedules run at the
+    same 300-round configuration) with the highest per-round mean accuracy envelope;
+    regret_t = cumulative sum of (best-reference acc_t - dpp acc_t), per ET6 point.
+    """
+    from scout_fl.analysis.tc_load import load_rounds, load_units
+    points = sorted({u["point"] for u in load_units("tempo", runs_root)
+                     if (u["point"] or "").startswith("ET6_")})
+    if not points:
+        print("  [regret] no E-T6 units; skip"); return
+    plt = _mpl()
+    fig, ax = plt.subplots(figsize=(6.2, 4.2))
+    stat_rows = []
+    for point in points:
+        rows = load_rounds("tempo", point, runs_root)
+        if not rows:
+            continue
+        by = {}
+        for r in rows:
+            by.setdefault(r["method"], {}).setdefault(int(r["round"]), []).append(r["test_acc"])
+        if "tempo_dpp" not in by:
+            continue
+        T = max(max(d) for d in by.values()) + 1
+        curves = {m: np.array([float(np.mean(d.get(t, [np.nan]))) for t in range(T)])
+                  for m, d in by.items()}
+        refs = [m for m in curves if m != "tempo_dpp"]
+        if not refs:
+            continue
+        best_ref = np.nanmax(np.stack([curves[m] for m in refs]), axis=0)
+        regret = np.nancumsum(np.clip(best_ref - curves["tempo_dpp"], a_min=None, a_max=None))
+        ax.plot(range(T), regret, label=point.replace("ET6_", ""))
+        for t in range(0, T, max(1, T // 60)):
+            stat_rows.append({"point": point, "round": t, "cum_regret": float(regret[t])})
+    ax.set_xlabel("round"); ax.set_ylabel("cumulative regret vs best-in-hindsight (acc)")
+    ax.set_title("E-T6 TEMPO-DPP empirical regret"); ax.legend(fontsize=7)
+    _save(plt, fig, fig_dir, "et6_regret")
+    _dump_csv(os.path.join(fig_dir, "et6_regret.csv"), stat_rows, ["point", "round", "cum_regret"])
+
+
 # ---------------------------------------------------------------- E-T2 gradient decay
 def fig_grad_decay(fig_dir, analytic_dir):
     src = Path(analytic_dir) / "tempo/et2/et2_grad_decay.csv"
@@ -198,6 +240,7 @@ def generate_all(fig_dir=None, runs_root=None, analytic_dir=None):
     for fn, args in [(fig_tempo_frontier, (fig_dir, runs_root)),
                      (fig_mobility_regime, (fig_dir, runs_root)),
                      (fig_privacy_frontier, (fig_dir, runs_root)),
+                     (fig_regret, (fig_dir, runs_root)),
                      (fig_ec4_leakage, (fig_dir, analytic_dir)),
                      (fig_dither, (fig_dir, analytic_dir)),
                      (fig_grad_decay, (fig_dir, analytic_dir))]:

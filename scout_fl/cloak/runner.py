@@ -46,8 +46,14 @@ from scout_fl.utils.seed import seed_everything
 
 
 def run_cloak_seed(cfg, ds, seed, mode, r_floor, *, runs_root=None, tag="cloak", point="base",
-                   method=None):
-    """Run one CloakFL unit; return (rows, objectives). Resumable via runs_root."""
+                   method=None, csi_error=0.0):
+    """Run one CloakFL unit; return (rows, objectives). Resumable via runs_root.
+
+    ``csi_error`` (E-C6 robustness, design §2.6): std of the multiplicative log-normal
+    error on the BS's channel-state estimate. Selection scoring and the primal-dual MSE
+    penalty use the NOISY estimate g_hat; the realized AirComp MSE (and the leakage
+    accountant, which reflects physical reality) always use the true g. 0 -> perfect CSI.
+    """
     method = method or f"{mode}__r{r_floor:g}"
     path = unit_path(runs_root, tag, point, method, seed) if runs_root else None
     if path is not None:
@@ -111,7 +117,11 @@ def run_cloak_seed(cfg, ds, seed, mode, r_floor, *, runs_root=None, tag="cloak",
 
     participation = np.zeros(K)
     rows = []
+    csi_rng = np.random.default_rng(int(seed) + 4241) if csi_error > 0 else None
+
     for t in range(rounds):
+        # E-C6 imperfect CSI: the BS scores/penalizes with a noisy channel estimate
+        g_hat = g if csi_rng is None else g * csi_rng.lognormal(0.0, float(csi_error), size=K)
         g_flat = server.global_flat()
         tic = time.perf_counter()
         losses = np.zeros(K)
@@ -142,7 +152,7 @@ def run_cloak_seed(cfg, ds, seed, mode, r_floor, *, runs_root=None, tag="cloak",
             selected = random_selection(K, budget, rng)
         else:
             def penalty_fn(S, k):
-                mse_k = aggregation_mse(g, S + [k], power=P, sigma2=sigma2)
+                mse_k = aggregation_mse(g_hat, S + [k], power=P, sigma2=sigma2)  # BS's CSI estimate
                 return duals.mu.get("mse", 0.0) * max(0.0, mse_k - (mse_eps or 0.0))
             selected, relaxed = leakage_capped_greedy(
                 total, K, budget, accountant=bs_acct, snr_up=snr_up, atten=mp["leak_atten"],
@@ -206,20 +216,22 @@ def run_cloak_seed(cfg, ds, seed, mode, r_floor, *, runs_root=None, tag="cloak",
         cmap.update(selected, scn.C)
         fair.update(selected)
         if path is not None:
-            save_unit(path, _meta(cfg, method, seed, point, tag, scn, mode, r_floor), rows, complete=False)
+            save_unit(path, _meta(cfg, method, seed, point, tag, scn, mode, r_floor, csi_error),
+                      rows, complete=False)
 
     objectives = _cloak_objectives(rows, participation, K, r_floor, mode)
     if path is not None:
-        save_unit(path, _meta(cfg, method, seed, point, tag, scn, mode, r_floor),
+        save_unit(path, _meta(cfg, method, seed, point, tag, scn, mode, r_floor, csi_error),
                   rows, complete=True, objectives=objectives)
     return rows, objectives
 
 
-def _meta(cfg, method, seed, point, tag, scn, mode, r_floor):
+def _meta(cfg, method, seed, point, tag, scn, mode, r_floor, csi_error=0.0):
     return {"method": method, "seed": int(seed), "point": point, "tag": tag, "K": scn.K,
             "budget": int(cfg.network.budget), "rounds": int(cfg.fl.rounds),
             "dataset": cfg.fl.dataset, "model": cfg.fl.model,
-            "cloak_mode": mode, "r_floor": float(r_floor), "program": "cloak"}
+            "cloak_mode": mode, "r_floor": float(r_floor), "csi_error": float(csi_error),
+            "program": "cloak"}
 
 
 def _cloak_objectives(rows, participation, K, r_floor, mode):

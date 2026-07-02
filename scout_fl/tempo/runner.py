@@ -64,8 +64,21 @@ def _sensing_at(clients, targets, cfg):
 
 def run_tempo_seed(cfg, ds, seed, method, schedule: Optional[Schedule] = None,
                    controller: Optional[Controller] = None, *, sigma_p=0.05,
-                   p_max=None, mission="sustained", runs_root=None, tag="tempo", point="base"):
-    """Run one TEMPO unit; return (rows, objectives). Resumable via runs_root."""
+                   p_max=None, mission="sustained", runs_root=None, tag="tempo", point="base",
+                   sigma_p_ctrl=None, l_noise=0.0, inner="v2"):
+    """Run one TEMPO unit; return (rows, objectives). Resumable via runs_root.
+
+    E-T5 robustness knobs (design §1.5):
+      sigma_p_ctrl — the CONTROLLER/TRACKER's believed process-noise std (mis-specified
+                     Q ablation: e.g. 2x/0.5x the true sigma_p); ground-truth mobility
+                     always uses the true sigma_p. None -> correctly specified.
+      l_noise      — std of multiplicative log-normal noise on the L_t estimate the
+                     controller sees (noisy learning-state ablation). 0 -> exact.
+      inner        — 'v2' (default: greedy + soft primal-dual AirComp-MSE penalty, the
+                     SCOUT-FL v2 machinery) or 'plain' (greedy on the mixed utility with
+                     NO MSE penalty) — the inner-selector swap ablation showing the
+                     schedule, not the inner selector, carries the gain.
+    """
     path = unit_path(runs_root, tag, point, method, seed) if runs_root else None
     if path is not None:
         cached = load_unit(path)
@@ -118,12 +131,14 @@ def run_tempo_seed(cfg, ds, seed, method, schedule: Optional[Schedule] = None,
 
     targets0 = np.asarray(scn.targets, dtype=float)
     area = np.asarray(cfg.network.area_size, dtype=float)
-    mobility = CVMobility(targets0, sigma_p, rng, area=area)
-    tracker = InformationKalmanTracker(targets0, sigma_p, rng)
-    _, Q = cv_matrices(sigma_p)
-    q_growth = float(np.trace(Q[:2, :2]))
+    mobility = CVMobility(targets0, sigma_p, rng, area=area)        # ground truth: TRUE sigma_p
+    sp_belief = float(sigma_p if sigma_p_ctrl is None else sigma_p_ctrl)
+    tracker = InformationKalmanTracker(targets0, sp_belief, rng)    # estimator: BELIEVED Q
+    _, Q_belief = cv_matrices(sp_belief)
+    q_growth = float(np.trace(Q_belief[:2, :2]))
     if p_max is None:
         p_max = float(cfg.get("tempo", {}).get("p_max", 20.0))
+    l_noise_rng = np.random.default_rng(int(seed) + 7919) if l_noise > 0 else None
 
     participation = np.zeros(K)
     L_t = 0.0
@@ -166,8 +181,10 @@ def run_tempo_seed(cfg, ds, seed, method, schedule: Optional[Schedule] = None,
         learning = LearningUtility(embeddings=embs)
 
         # --- policy: weights for this round ---
+        # noisy-L_t ablation: the controller observes a corrupted learning state
+        L_obs = L_t if l_noise_rng is None else float(L_t * l_noise_rng.lognormal(0.0, l_noise))
         if controller is not None:
-            ctx = ControlContext(t=t, T=rounds, trP=trP, L_t=L_t, p_max=p_max, M=scn.M,
+            ctx = ControlContext(t=t, T=rounds, trP=trP, L_t=L_obs, p_max=p_max, M=scn.M,
                                  inj_hat=inj_hat, q_growth=q_growth)
             decision = controller.decide(ctx)
             w_learn, w_sense, lam = decision.w_learn, decision.w_sense, decision.lam
@@ -186,8 +203,9 @@ def run_tempo_seed(cfg, ds, seed, method, schedule: Optional[Schedule] = None,
             mse_k = aggregation_mse(g, S + [k], power=P, sigma2=sigma2)
             return duals.mu.get("mse", 0.0) * max(0.0, mse_k - (mse_eps or 0.0))
 
+        use_penalty = aircomp_on and inner != "plain"          # inner-selector swap ablation
         res = ScoutGreedy(use_lazy=False).select(utility=mixed, num_clients=K, budget=budget,
-                                                 penalty_fn=penalty_fn if aircomp_on else None)
+                                                 penalty_fn=penalty_fn if use_penalty else None)
         sel_time = time.perf_counter() - tic
         selected = res.selected
         participation[selected] += 1
@@ -260,24 +278,29 @@ def run_tempo_seed(cfg, ds, seed, method, schedule: Optional[Schedule] = None,
         rows.append(row)
 
         if controller is not None:
-            controller.observe(ControlContext(t=t, T=rounds, trP=trP_after, L_t=L_t,
+            controller.observe(ControlContext(t=t, T=rounds, trP=trP_after, L_t=L_obs,
                                               p_max=p_max, M=scn.M, inj_hat=inj_hat, q_growth=q_growth))
+        meta = _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max,
+                     sp_belief, l_noise, inner)
         if path is not None:
-            save_unit(path, _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max),
-                      rows, complete=False)
+            save_unit(path, meta, rows, complete=False)
 
     objectives = _tempo_objectives(rows, participation, K, p_max)
     if path is not None:
-        save_unit(path, _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max),
+        save_unit(path, _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max,
+                              sp_belief, l_noise, inner),
                   rows, complete=True, objectives=objectives)
     return rows, objectives
 
 
-def _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max):
+def _meta(cfg, method, seed, point, tag, scn, sigma_p, mission, p_max,
+          sp_belief=None, l_noise=0.0, inner="v2"):
     return {"method": method, "seed": int(seed), "point": point, "tag": tag, "K": scn.K,
             "budget": int(cfg.network.budget), "rounds": int(cfg.fl.rounds),
             "dataset": cfg.fl.dataset, "model": cfg.fl.model,
             "sigma_p": float(sigma_p), "mission": mission, "p_max": float(p_max),
+            "sigma_p_ctrl": float(sp_belief if sp_belief is not None else sigma_p),
+            "l_noise": float(l_noise), "inner": str(inner),
             "program": "tempo"}
 
 

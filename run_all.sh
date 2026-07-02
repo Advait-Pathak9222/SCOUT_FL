@@ -127,7 +127,7 @@ gate_exclusions() {
 import json,sys
 v=json.load(open(sys.argv[1]))
 excl=set()
-DOWN={"GATE1":["E-T3","E-T4","E-T5","E-T6"],"GATE2":["E-C3","E-C5"],"GATE3":["E-C3","E-C5"]}
+DOWN={"GATE1":["E-T3","E-T4","E-T5","E-T6"],"GATE2":["E-C3","E-C5","E-C6"],"GATE3":["E-C3","E-C5","E-C6"]}
 for g,exps in DOWN.items():
     if v.get(g,{}).get("pass") is False:
         excl.update(exps)

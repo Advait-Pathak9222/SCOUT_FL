@@ -1,5 +1,0 @@
-tempo:ET1_cifar10_sp0:oracle_stl_tau60:s0
-tempo:ET1_cifar10_sp0:oracle_burst_b5_p25:s0
-tempo:ET4_cifar10_sp0.05_sustained:naive_roundrobin:s0
-tempo:ET4_cifar10_sp0.05_sustained:static_lam0.5:s0
-cloak:EC3_cifar10:uncapped__r1:s0
