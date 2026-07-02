@@ -52,6 +52,7 @@ class Scenario:
     clients: np.ndarray
     cluster_assignment: np.ndarray = None
     compute_het: np.ndarray = None       # per-client compute-speed multiplier (straggler heterogeneity)
+    targets: np.ndarray | None = None
 
 
 def _clustered_layout(cfg, rng, K, M, area):
@@ -116,7 +117,8 @@ def build_scenario(cfg, rng) -> Scenario:
     # Placeholder gradient embeddings (FL step replaces with real per-client gradients).
     embeddings = rng.normal(size=(K, 8))
     sim = LearningUtility(embeddings=embeddings).S
-    return Scenario(snr, fim, j0, weights, C, sim, K, M, R, clients, cluster_assignment)
+    return Scenario(snr, fim, j0, weights, C, sim, K, M, R, clients, cluster_assignment,
+                    targets=targets)
 
 
 def run_loop(cfg, scn: Scenario, kind: str, seed: int):

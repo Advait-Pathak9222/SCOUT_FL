@@ -1,0 +1,12 @@
+\begin{tabular}{@{}l c c c c >{\raggedright\arraybackslash}p{5.2cm}@{}}
+\toprule
+Method & Acc.\ (\%) & Mean joint & Constr.-acc & $\Delta$Acc vs & Verdict \\
+ & (C-10) & rank $\downarrow$ (/28) & wins /22 & Asaad (pp) & \\
+\midrule
+\textbf{SCOUT-FL v2} & 46.0 & 1.9 & 1 & $+8.4$ & \cellcolor{green!14}\textbf{PUBLISH (headline)} --- balanced, Pareto-robust (both CRB) \\
+\textbf{JEDI/VISMAYA-FL} & 49.1 & 6.5 & 19 & $+11.5$ & \cellcolor{yellow!18}\textbf{REFRAME} --- accuracy-max; CRB-convention fragile \\
+\textbf{SCOUT-FL v1} & 44.6 & 4.3 & 1 & $+7.0$ & \cellcolor{orange!16}DEMOTE to ablation (acc-tie vs strong baselines) \\
+\midrule
+Asaad et al. [TWC'25] & 37.6 & 7.8 & 0 &  & SOTA ISAC baseline (reference) \\
+\bottomrule
+\end{tabular}

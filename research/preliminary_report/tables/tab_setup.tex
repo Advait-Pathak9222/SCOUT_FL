@@ -1,0 +1,17 @@
+\begin{tabular}{@{}l l@{}}
+\toprule
+Setting & Value \\
+\midrule
+Clients / budget & $N=100$, $K=10$ ($K/N=10\%$) \\
+Rounds / seeds & $150$ (ablations 30--50) / $5$ \\
+Datasets & CIFAR-10/100, EMNIST, F-MNIST, UCI-HAR \\
+Models & small-CNN (images), MLP (HAR) \\
+Non-IID & spatial Dirichlet, $\alpha\in\{0.1,0.3,0.5\}$ \\
+Sensing targets & $M\in\{2,3,5\}$ (log-det FIM, CRB) \\
+Channel & Rician/Rayleigh, 3.5\,GHz, phys.\ link budget \\
+Uplink power & $-15$\,dBm nominal; SNR sweep $-35..0$\,dBm \\
+Aggregation & AirComp OTA-FedAvg, MSE budget $10^{-3}$ \\
+Methods & 4 proposed variants + 25 baselines \\
+Operating points & 22 OFAT sweeps (learning/wireless/sensing) \\
+\bottomrule
+\end{tabular}

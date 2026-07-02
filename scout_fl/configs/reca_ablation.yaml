@@ -1,0 +1,20 @@
+experiment: reca_ablation
+seed: 0
+output_dir: outputs
+rounds: 150
+first_shift_round: 50
+first_shift_end: 80
+second_shift_round: 120
+
+network:
+  num_clients: 100
+  budget: 10
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+
+selection:
+  methods: [reca, reca_no_memory, reca_score_only, wrong_reuse, oracle_reuse]

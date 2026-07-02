@@ -1,0 +1,44 @@
+experiment: reca_twc_resource_tradeoff
+seed: 0
+output_dir: outputs
+rounds: 150
+first_shift_round: 50
+first_shift_end: 90
+second_shift_round: 120
+
+network:
+  num_clients: 100
+  budget: 10
+
+sweeps:
+  power_budget: [0.25, 0.5, 1.0, 2.0]
+  selected_client_budget: [5, 10, 20]
+  bandwidth_budget: [0.5, 1.0, 2.0]
+  sensing_resource_budget: [0.5, 1.0, 2.0]
+  latency_budget: [0.5, 1.0, 2.0]
+  energy_budget: [0.5, 1.0, 2.0]
+  adapter_memory_budget: [0, 1, 2, 4, 8]
+
+wireless:
+  uplink_snr_db: 18
+  sensing_snr_db: 18
+  aircomp_mse_threshold: 0.05
+
+sensing:
+  num_targets: 3
+  crb_threshold: 1.0
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+  log_wireless_metrics: true
+  log_sensing_metrics: true
+  log_adapter_metrics: true
+
+selection:
+  methods: [reca, fedcs, oort, ota_fedavg, ota_fl_iscc, iscc_air_feel, asaad]
+
+metrics:
+  log: [accuracy_energy_curve, accuracy_latency_curve, accuracy_mse_curve, crb_mse_curve, crb_cvar_power_curve, recovery_memory_curve]

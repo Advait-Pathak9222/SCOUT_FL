@@ -1,0 +1,44 @@
+experiment: reca_twc_shift
+seed: 0
+output_dir: outputs
+rounds: 150
+first_shift_round: 50
+first_shift_end: 90
+second_shift_round: 1000
+
+network:
+  num_clients: 100
+  budget: 10
+
+wireless:
+  shift_types: [target_motion, blockage, fading_distribution, sensing_clutter, rare_class_region]
+  uplink_snr_db: 18
+  sensing_snr_db: 18
+  blockage_probability: 0.15
+  power_budget: 1.0
+  bandwidth_budget: 1.0
+  latency_budget: 1.0
+  energy_budget: 1.0
+  aircomp_mse_threshold: 0.05
+
+sensing:
+  num_targets: 3
+  target_speed: medium
+  crb_threshold: 1.0
+  sensing_resource_budget: 1.0
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+  adapter_memory_budget: 4
+  log_wireless_metrics: true
+  log_sensing_metrics: true
+  log_adapter_metrics: true
+
+selection:
+  methods: [reca, reca_no_memory, reca_score_only, random_reuse, fedcs, oort, ota_fedavg, ota_fl_iscc, iscc_air_feel, asaad]
+
+metrics:
+  log: [recovery_rounds, post_shift_accuracy, crb_cvar, aircomp_mse_cvar, outage, trigger_delay, adapter_creation_round]

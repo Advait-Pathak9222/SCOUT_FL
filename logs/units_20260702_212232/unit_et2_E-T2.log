@@ -1,0 +1,2 @@
+[run ] et2:E-T2  (E-T2, stage=analytic)
+[E-T2] gradient-norm decays by alpha: {'0.1': False, '0.3': False, '0.5': False}

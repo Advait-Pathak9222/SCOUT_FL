@@ -1,0 +1,33 @@
+[21:25:56] run_all start (gates=strict, NUM_GPUS=0, smoke='no', resume='no')
+[21:25:56] === PREFLIGHT: env + unit tests + schema report ===
+[env] torch 2.12.0 cuda=False mps=True
+[21:25:57] --- preflight unit tests (NEES R4, leakage hand-case, M2 invariance, replay) ---
+................................                                         [100%]
+32 passed in 1.93s
+[21:26:00] --- schema report (strict: replay faithfulness gates E-C4/E-T2) ---
+[schema] wrote /Users/advaitpathak/Desktop/SCOUT-FL/analysis/schema_report.json
+  ablation           units=   60 points=  1 methods= 12 seeds=[0, 1, 2, 3, 4]
+  ablation_vismaya   units=   30 points=  1 methods=  6 seeds=[0, 1, 2, 3, 4]
+  campaign           units= 3424 points= 22 methods= 32 seeds=[0, 1, 2, 3, 4]
+  campaign_main      units=  160 points=  1 methods= 32 seeds=[0, 1, 2, 3, 4]
+  cloak              units=    0 points=  0 methods=  0 seeds=[]
+  tempo              units=    0 points=  0 methods=  0 seeds=[]
+[schema] replay verification ok=True (4 methods checked, tol=0.001)
+     aircomp_mse_min: |diff|=1.69e-05 ok=True
+               asaad: |diff|=4.05e-05 ok=True
+      collabsensefed: |diff|=4.35e-05 ok=True
+           comm_only: |diff|=1.69e-05 ok=True
+[21:26:04] PREFLIGHT OK
+[21:26:04] STAGE analytic: 5 incomplete unit(s)  (exclude='none')
+[dispatch] 5 units across 2 worker(s), num_gpus=0
+[dispatch 1] gpu0 ok  ec1:E-C1 (0.2s)
+[dispatch 2] gpu0 ok  ec2ab:E-C2ab (0.2s)
+[dispatch 3] gpu0 ok  et2:E-T2 (0.4s)
+[dispatch 4] gpu0 ok  ec4:E-C4 (3.4s)
+[dispatch 5] gpu0 ok  tempo_rescore:E-T1-static (4.3s)
+[dispatch] done: 5 ok, 0 failed
+[21:26:09] === GATES: evaluate 1-3 from analytic + Phase-1 artifacts ===
+[gate] GATE1: pass=False (measured 0.0)
+[gate] GATE2: pass=True (measured 0.781244551761916)
+[gate] GATE3: pass=True (measured None)
+[21:26:10] run_all complete. See analysis/decision_summary.md

@@ -1,0 +1,47 @@
+experiment: reca_twc_scalability
+seed: 0
+output_dir: outputs
+rounds: 100
+first_shift_round: 40
+first_shift_end: 70
+second_shift_round: 1000
+
+sweeps:
+  clients: [50, 100, 200, 500]
+  selected_client_ratios: [0.05, 0.10, 0.20]
+  targets: [1, 3, 5, 10]
+  adapters: [0, 1, 2, 4, 8]
+  probe_dimension: [4, 8, 16, 32]
+  regime_count: [1, 2, 4, 8]
+
+network:
+  num_clients: 100
+  budget: 10
+
+wireless:
+  uplink_snr_db: 18
+  sensing_snr_db: 18
+  power_budget: 1.0
+  bandwidth_budget: 1.0
+  latency_budget: 1.0
+  energy_budget: 1.0
+  aircomp_mse_threshold: 0.05
+
+sensing:
+  num_targets: 3
+  crb_threshold: 1.0
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+  log_wireless_metrics: true
+  log_sensing_metrics: true
+  log_adapter_metrics: true
+
+selection:
+  methods: [reca, reca_score_only, reca_no_memory, fedcs, ota_fedavg, iscc_air_feel, asaad]
+
+metrics:
+  log: [selection_time, world_model_update_time, adapter_memory, extra_flops, payload, round_time, energy, convergence_rounds]

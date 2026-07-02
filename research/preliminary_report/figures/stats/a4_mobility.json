@@ -1,0 +1,47 @@
+{
+  "requested": "Delta accuracy / Delta CRB (full JEDI/VISMAYA vs synergy-off) vs. mobility sigma_p",
+  "status": "SWEEP MISSING - only a single mobility value exists",
+  "available": {
+    "tag": "ablation_vismaya",
+    "sigma_p": 0.05,
+    "rounds": 50,
+    "seeds": 5,
+    "full": "vismaya",
+    "synergy_off": "vismaya_no_syn"
+  },
+  "missing": "no runs at sigma_p in {0.0, 0.02, 0.10, 0.20}; referenced configs/sweep_mobility_ablation.yaml is NOT in the repo",
+  "generate_command": [
+    "# create a sigma_p sweep by overriding vismaya.process_noise:",
+    "for pn in 0.0 0.02 0.05 0.10 0.20; do",
+    "  python -m scout_fl.experiments.run_fl_synthetic \\",
+    "    --config scout_fl/configs/ablation_vismaya.yaml \\",
+    "    --override vismaya.process_noise=$pn experiment=mobility_pn$pn \\",
+    "    'selection.methods=[vismaya,vismaya_no_syn]' 'seeds=[0,1,2,3,4]'",
+    "done",
+    "python -m scout_fl.analysis.collect  # then re-run a4_mobility once the sweep exists"
+  ],
+  "single_point_final": {
+    "test_acc": {
+      "full_mean": 0.10289999999999999,
+      "synergy_off_mean": 0.10325,
+      "delta": -0.0003500000000000003,
+      "delta_ci95": [
+        -0.0069500000000000065,
+        0.005400000000000005
+      ],
+      "wilcoxon_p": 1.0,
+      "significant_0.05": false
+    },
+    "crb": {
+      "full_mean": 0.147596,
+      "synergy_off_mean": 2.3515300000000003,
+      "delta": -2.2039340000000003,
+      "delta_ci95": [
+        -6.581060000000001,
+        0.013925999999999994
+      ],
+      "wilcoxon_p": 0.375,
+      "significant_0.05": false
+    }
+  }
+}

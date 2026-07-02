@@ -1,0 +1,142 @@
+experiment: reca_twc_nonstationary_fl
+seed: 0
+seeds: [0, 1, 2, 3, 4]
+output_dir: outputs
+
+network:
+  num_clients: 100
+  budget: 10
+  num_targets: 3
+  num_regions: 9
+  area_size: [100.0, 100.0]
+
+geometry:
+  layout: clustered
+  num_clusters: 5
+  cluster_spread: 3.0
+  bs_position: [50.0, 50.0]
+  random_clients: true
+  random_targets: true
+  source: synthetic
+
+channel:
+  model: rician
+  rician_k_db: 6.0
+  pathloss_exponent: 3.0
+  reference_distance: 10.0
+  snr_ref_db: 20.0
+  source: synthetic
+
+sensing:
+  ref_snr_db: 20.0
+  ref_distance: 10.0
+  pathloss_exponent: 2.0
+  rcs_mean: 1.0
+  rcs_std: 0.3
+  k_range: 1.0
+  k_angle: 0.05
+  prior_fim: 1.0e-3
+  target_weights: [1.0, 1.0, 1.0]
+
+coverage:
+  rho: 0.92
+  innovation: 0.08
+  sensing_range: 18.0
+  saturating: exp
+
+objectives:
+  alpha_learning: 1.0
+  lambda_sense: 1.0
+  lambda_coverage: 0.5
+  lambda_fairness: 0.3
+
+constraints:
+  crb_max: null
+  mse_agg_max: 1.0e-3
+  latency_max: null
+  energy_max: null
+  power_budget: null
+  infeasible_policy: relax_and_log
+  dual_lr: 0.5
+
+aircomp:
+  enabled: true
+  ota_distortion: true
+  ota_noise_scale: 0.5
+  power: 1.0
+  sigma2: 1.0
+  bandwidth: 1.0e+6
+  model_bits: 1.0e+5
+
+physical:
+  enabled: true
+  carrier_ghz: 3.5
+  noise_figure_db: 7.0
+  temperature_k: 290.0
+  tx_power_dbm: -15.0
+  bits_per_param: 32
+  cycles_per_sample: 1.0e+6
+  sense_power_w: 0.1
+  sense_time_s: 0.01
+
+energy:
+  cpu_cycles: 1.0e+7
+  cpu_freq: 1.0e+9
+  kappa: 1.0e-28
+  e_sense: 0.1
+  t_sense: 0.01
+
+selection:
+  methods: [reca]
+  use_lazy_greedy: true
+
+nonstationarity:
+  enabled: true
+  first_shift_round: 50
+  first_shift_end: 90
+  second_shift_round: 120
+  shift_types: [target_motion, blockage, fading_distribution, sensing_clutter, rare_class_region]
+  affected_fraction: 0.35
+  affected_mode: cluster0
+  severity: 1.0
+  aprime_similarity: 0.85
+  target_speed: 1.5
+  blockage_attenuation: 0.12
+  blockage_sensing_attenuation: 0.35
+  clutter_snr_factor: 0.55
+  affected_clutter_factor: 0.65
+  fading_lognormal_sigma: 0.6
+  affected_fading_factor: 0.55
+  rare_loss_boost: 0.35
+  rare_embedding_shift: 0.25
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+  adapter_memory_budget: 4
+  log_wireless_metrics: true
+  log_sensing_metrics: true
+  log_adapter_metrics: true
+
+fl:
+  enabled: true
+  dataset: cifar10
+  data_root: data
+  download: true
+  model: small_cnn
+  optimizer: sgd
+  non_iid: spatial
+  dirichlet_alpha: 0.3
+  rounds: 150
+  local_epochs: 1
+  batch_size: 64
+  lr: 0.05
+  device: auto
+  probe_batches: 1
+  subsample_train: 20000
+  subsample_test: 4000
+
+logging:
+  save_plots: true

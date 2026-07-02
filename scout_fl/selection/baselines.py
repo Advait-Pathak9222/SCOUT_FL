@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import numpy as np
 
+from scout_fl.objectives.reca_appraisal import RECAAppraisal
 from scout_fl.selection.base import Selector, SelectionResult
+from scout_fl.selection.reca_selector import RECASelector
 from scout_fl.selection.scout_greedy import naive_greedy
 from scout_fl.sim.aircomp import aggregation_mse, min_gain_for_mse
 
@@ -404,6 +406,58 @@ class ISCCAirFEELSelector(Selector):
         return SelectionResult(selected=sorted(int(k) for k in order))
 
 
+class RECAWirelessSelector(Selector):
+    """RECA-FL proposed method for wireless ISAC/OTA-FEEL selection.
+
+    This registry wrapper exposes RECA as a first-class method in the shared
+    synthetic FL bake-off. The dedicated RECA runners exercise the full adapter
+    bank lifecycle; this selector supplies the per-round wireless appraisals and
+    diagnostics needed to compare RECA against external wireless/ISAC baselines.
+    """
+    name = "reca"
+
+    def __init__(self) -> None:
+        self.selector = RECASelector(RECAAppraisal())
+
+    def select(self, sensing, losses, embeddings, g, snr_scores, latency,
+               K, budget, P, sigma2, mse_eps=None, **_) -> SelectionResult:
+        gains = np.clip(np.asarray(g, dtype=float), 1e-12, None)
+        loss = np.asarray(losses, dtype=float)
+        emb = np.asarray(embeddings, dtype=float)
+        snr = np.asarray(snr_scores, dtype=float)
+        lat = np.asarray(latency, dtype=float)
+
+        crb_single = np.asarray([float(np.sum(sensing.crb([k]))) for k in range(K)], dtype=float)
+        mse_single = np.asarray([aggregation_mse(gains, [k], power=P, sigma2=sigma2)
+                                 for k in range(K)], dtype=float)
+        mse_ref = float(mse_eps) if mse_eps else float(np.median(mse_single) + 1e-12)
+
+        risk = _zscore_positive(crb_single) + _zscore_positive(mse_single / max(mse_ref, 1e-12))
+        mismatch = _zscore_positive(np.linalg.norm(emb - emb.mean(axis=0, keepdims=True), axis=1))
+        mismatch += 0.25 * _zscore_positive(np.abs(snr - np.median(snr)))
+        progress = _zscore_positive(loss) + 0.5 * _zscore_positive(snr)
+        progress += 0.5 * _zscore_positive(gains) - 0.25 * _zscore_positive(lat)
+
+        res = self.selector.select(risk=risk, mismatch=mismatch, progress=progress, budget=budget)
+        res.info.update({
+            "reca_aircomp_mse_cvar_proxy": float(np.mean(np.sort(mse_single)[int(0.9 * (K - 1)):]))
+            if K else 0.0,
+            "reca_crb_cvar_proxy": float(np.mean(np.sort(crb_single)[int(0.9 * (K - 1)):]))
+            if K else 0.0,
+            "reca_wireless_mode": "registry_selector",
+        })
+        return res
+
+
+def _zscore_positive(x) -> np.ndarray:
+    a = np.nan_to_num(np.asarray(x, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+    s = float(a.std())
+    if s <= 1e-12:
+        return np.zeros_like(a)
+    z = (a - float(a.mean())) / s
+    return np.maximum(0.0, z)
+
+
 _ISCC_RESOURCE = ISCCResourceSelector()                       # shared by FedAVG-/FedSGD-ISCC
 BASELINE_REGISTRY = {
     s.name: s for s in (
@@ -413,6 +467,7 @@ BASELINE_REGISTRY = {
         OTAFedAvgSelector(), FedISCCSelector(), AsaadSelector(),
         DivFLSelector(), DELTASelector(), POFLSelector(), FairEquityFLSelector(),
         ISCCAirFEELSelector(), CRBOnlySelector(), FedISSelector(),
+        RECAWirelessSelector(),
     )
 }
 BASELINE_REGISTRY["fedavg_iscc"] = _ISCC_RESOURCE

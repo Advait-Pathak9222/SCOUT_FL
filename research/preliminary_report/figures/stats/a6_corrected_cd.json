@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "ranking": "joint ISAC score (0.5 acc + 0.5 logdet)",
+    "primary_points": 21,
+    "excluded": "C_sensing_targets=5 (2 of 5 seeds)",
+    "CD": 2.621668498167858,
+    "caveats": [
+      "The N operating points share the SAME 5 seeds and one system model; they are NOT independent datasets. Nemenyi assumes independence, so the CD / p-values are ANTI-CONSERVATIVE (optimistic). Treat as illustrative.",
+      "C_sensing_targets=5 has only 2/5 seeds (large variance) and is excluded from the primary ranking; its inclusion barely shifts ranks (see rank_shift)."
+    ]
+  },
+  "avg_rank_21pts": {
+    "jedi": 4.0,
+    "scout_v2": 1.5714285714285714,
+    "scout_greedy": 3.0,
+    "collabsensefed": 2.1904761904761907,
+    "fedgcs": 7.428571428571429,
+    "divfl": 6.809523809523809,
+    "oort": 8.952380952380953,
+    "asaad": 6.095238095238095,
+    "random": 4.9523809523809526
+  },
+  "avg_rank_22pts": {
+    "jedi": 4.136363636363637,
+    "scout_v2": 1.5454545454545454,
+    "scout_greedy": 2.9545454545454546,
+    "collabsensefed": 2.227272727272727,
+    "fedgcs": 7.318181818181818,
+    "divfl": 6.7727272727272725,
+    "oort": 8.954545454545455,
+    "asaad": 6.0,
+    "random": 5.090909090909091
+  },
+  "rank_shift_incl_M5": {
+    "jedi": 0.136,
+    "scout_v2": -0.026,
+    "scout_greedy": -0.045,
+    "collabsensefed": 0.037,
+    "fedgcs": -0.11,
+    "divfl": -0.037,
+    "oort": 0.002,
+    "asaad": -0.095,
+    "random": 0.139
+  }
+}

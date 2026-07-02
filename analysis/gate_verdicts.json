@@ -1,0 +1,34 @@
+{
+  "GATE1": {
+    "gate": "GATE1_dominance",
+    "criterion": ">=1 oracle schedule beats the static frontier by >=1 pp accuracy at matched-or-better time-avg tracking, paired 95% CI excludes 0",
+    "threshold_pp": 1.0,
+    "sigma_p": 0.0,
+    "pass": null,
+    "measured_pp": null,
+    "note": "no E-T1 oracle-schedule units present (run the train stage)"
+  },
+  "GATE2": {
+    "gate": "GATE2_entanglement",
+    "criterion": "median retained target log-det >= 0.50 at >=10 m client CRB floor",
+    "measured": 0.781244551761916,
+    "threshold": 0.5,
+    "pass": true,
+    "framing": "constructive"
+  },
+  "GATE3": {
+    "gate": "GATE3_dither",
+    "criterion": ">=10x eavesdropper CRB inflation at sigma_d^2 costing <5% sensing log-det & <0.5pp acc",
+    "sigma_d2": 0.9,
+    "eavesdropper_inflation_1rx": 10.0,
+    "eavesdropper_inflation_3rx": 4.0,
+    "sensing_logdet_cost_frac": 0.018000000000000002,
+    "accuracy_cost_pp": 0.0,
+    "thresholds": {
+      "inflation": 10.0,
+      "sensing_cost": 0.05,
+      "acc_cost_pp": 0.5
+    },
+    "pass": true
+  }
+}

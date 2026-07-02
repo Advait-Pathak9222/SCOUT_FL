@@ -1,0 +1,39 @@
+\begin{tabular}{@{}l l c c c c c@{}}
+\toprule
+Method & Family & Acc.\ (\%) & log-det $\uparrow$ & CRB $\downarrow$ & MSE ($\times10^{-4}$) $\downarrow$ & ISAC $\uparrow$ \\
+\midrule
+\textbf{SCOUT-FL v2 (ours)} & Proposed & 46.0\,\footnotesize$\pm$2.6 & 70.34 & 0.067 & 2.01 & \textbf{0.805} \\
+\textbf{SCOUT-FL v1 (ours)} & Proposed & 44.6\,\footnotesize$\pm$2.3 & 70.44 & 0.066 & 2.01 & 0.785 \\
+\textbf{JEDI/VISMAYA-FL (ours)} & Proposed & 49.1\,\footnotesize$\pm$1.1 & 68.23 & 0.096 & 2.01 & 0.760 \\
+\midrule
+CollabSenseFed & ISAC & 44.7\,\footnotesize$\pm$2.2 & 70.79 & 0.062 & 2.01 & 0.805 \\
+Sensing-Native OTA-FL & ISAC & 44.0\,\footnotesize$\pm$2.2 & 70.84 & 0.062 & 2.01 & 0.793 \\
+Fixed-Weighted ISAC & ISAC & 42.8\,\footnotesize$\pm$2.1 & 70.69 & 0.065 & 2.01 & 0.765 \\
+Asaad et al. [TWC'25] & ISAC & 37.6\,\footnotesize$\pm$3.7 & 71.47 & 0.052 & 1.51 & 0.709 \\
+OTA-FL-ISCC [ICC-W'24] & ISAC & 47.4\,\footnotesize$\pm$2.4 & 66.91 & 0.119 & 2.01 & 0.666 \\
+Fed-ISCC [IoT-J'24] & ISAC & 29.8\,\footnotesize$\pm$7.0 & 68.37 & 0.722 & 1.68 & 0.421 \\
+FedAvg-ISCC & ISAC & 31.2\,\footnotesize$\pm$2.8 & 67.35 & 0.471 & 0.41 & 0.398 \\
+ISCC-Air-FEEL [2025] & ISAC & 28.4\,\footnotesize$\pm$4.5 & 66.64 & 0.865 & 0.35 & 0.314 \\
+FedSGD-ISCC & ISAC & 24.7\,\footnotesize$\pm$3.9 & 67.35 & 0.471 & 0.41 & 0.282 \\
+\midrule
+DivFL [ICLR'22] & Learning & 50.0\,\footnotesize$\pm$1.1 & 66.74 & 0.123 & 2.01 & 0.705 \\
+FedIS & Learning & 48.3\,\footnotesize$\pm$1.9 & 66.62 & 0.140 & 2.01 & 0.669 \\
+DELTA [NeurIPS'23] & Learning & 47.8\,\footnotesize$\pm$3.7 & 66.64 & 0.136 & 2.01 & 0.662 \\
+FedGCS [IJCAI'24] & Learning & 46.6\,\footnotesize$\pm$1.9 & 67.11 & 0.119 & 2.01 & 0.661 \\
+FairEquityFL [2025] & Learning & 46.9\,\footnotesize$\pm$2.7 & 66.52 & 0.138 & 2.01 & 0.639 \\
+PO-FL & Learning & 45.2\,\footnotesize$\pm$2.4 & 66.56 & 0.141 & 2.01 & 0.610 \\
+FedCS [2019] & Learning & 36.0\,\footnotesize$\pm$4.1 & 69.52 & 0.119 & 1.83 & 0.587 \\
+Oort [OSDI'21] & Learning & 33.0\,\footnotesize$\pm$4.7 & 64.21 & 0.613 & 1.99 & 0.280 \\
+Loss-Greedy & Learning & 24.9\,\footnotesize$\pm$9.6 & 61.45 & 4.037 & 1.97 & 0.004 \\
+\midrule
+CRB-Only (A-opt) & Sensing & 37.2\,\footnotesize$\pm$3.5 & 71.57 & \underline{0.050} & 1.84 & 0.707 \\
+Sensing-Only (D-opt) & Sensing & 33.7\,\footnotesize$\pm$8.2 & \underline{71.92} & 0.055 & 1.93 & 0.661 \\
+\midrule
+SNR-Only & Comm & 29.8\,\footnotesize$\pm$7.0 & 68.37 & 0.722 & 1.68 & 0.421 \\
+AirComp-MSE-Min & Comm & 30.2\,\footnotesize$\pm$1.6 & 66.78 & 0.816 & 0.32 & 0.353 \\
+Comm-Only & Comm & 30.2\,\footnotesize$\pm$1.6 & 66.78 & 0.816 & 0.32 & 0.353 \\
+\midrule
+Random & Naive & \underline{52.6\,\footnotesize$\pm$4.1} & 66.42 & 0.142 & 2.01 & 0.737 \\
+OTA-FedAvg (Rand-K) & Naive & 47.0\,\footnotesize$\pm$3.0 & 66.40 & 0.145 & 2.01 & 0.636 \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,2 @@
+[run ] ec2ab:E-C2ab  (E-C2ab, stage=analytic)
+[E-C2] perfect-sync eps_agg=4.90e-16  eaves inflation@sigma_d2=0.9: 10.0x -> GATE3 pass=True

@@ -1,0 +1,2 @@
+[run ] ec1:E-C1  (E-C1, stage=analytic)
+[E-C1] retained median=0.781 -> GATE2 pass=True (constructive)

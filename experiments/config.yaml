@@ -1,0 +1,132 @@
+# =====================================================================
+# TEMPO-FL / CloakFL campaign — every experimental unit for the GPU cluster.
+# The design doc (research/RESEARCH_DESIGN_TEMPO_CLOAKFL.md) is the spec; this
+# file sets the SCALE knobs (seed counts, rounds, dataset subsets, which
+# experiments run). scout_fl/experiments/units.py expands it into the flat unit
+# list; run_all.sh dispatches units across $NUM_GPUS. Every number in a result
+# is computed from a run artifact — nothing here is a result.
+#
+# Seed policy (design §0.2.5): 10 seeds for headline comparisons (E-T4, E-C3),
+# 5 for sweeps/ablations (E-T1, E-T3, E-T5, E-C5).
+# =====================================================================
+
+base_config: scout_fl/configs/campaign_main.yaml
+runs_root: runs
+outputs_root: outputs/tempo_cloak
+existing_campaign_point: A_datasets=cifar10     # the CIFAR-10 stationary static frontier / E-C4 source
+
+seeds:
+  headline: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]      # 10 seeds
+  sweep:    [0, 1, 2, 3, 4]                      # 5 seeds
+
+# FL overrides applied to every TEMPO/Cloak training unit (kept close to the
+# campaign operating point; rounds is the main cost lever).
+fl:
+  rounds: 150
+  dirichlet_alpha: 0.3
+  subsample_train: 20000
+  subsample_test: 4000
+  device: auto
+
+# smoke overrides (one tiny unit per experiment type; asserts artifacts parse).
+smoke:
+  rounds: 5
+  subsample_train: 2000
+  subsample_test: 1000
+  seeds: [0]
+
+datasets:
+  cifar10: {dataset: cifar10, model: small_cnn}
+  emnist:  {dataset: emnist,  model: small_cnn}
+  uci_har: {dataset: uci_har, model: mlp}
+
+# ---------------------------------------------------------------- TEMPO
+tempo:
+  enabled: true
+  p_max: 20.0                                    # tr(P) constraint level (design §1.2)
+  et1:                                           # E-T1 oracle-schedule kill test (GATE 1)
+    datasets: [cifar10]
+    sigma_p: [0.0, 0.05]
+    seeds: sweep
+    tau_grid: [30, 50, 75, 100, 120]             # learn_then_sense switch times
+    stl_tau: 60                                  # sense_then_learn control
+    burst_lens: [3, 5, 10]
+    burst_periods: [15, 25, 50]
+  et4:                                           # E-T4 main bake-off (only if GATE 1 passes)
+    datasets: [cifar10, emnist, uci_har]
+    sigma_p: [0.0, 0.05, 0.1]
+    missions: [terminal, sustained]
+    seeds: headline
+    controllers:
+      - {name: tempo_threshold, kind: threshold, adaptive: true}
+      - {name: tempo_dpp,       kind: dpp, V: 1.0}
+      - {name: tempo_mpc,       kind: mpc, horizon: 10}
+    naive:
+      - {name: naive_roundrobin, kind: roundrobin}
+      - {name: naive_random,     kind: random, seed: 0}
+      - {name: naive_anneal,     kind: linear_anneal}
+      - {name: naive_twophase,   kind: two_phase}
+    tuned_static_lambda: 0.5                      # strongest fair static competitor
+  et3:                                           # E-T3 mobility sweep (regime map)
+    enabled: true
+    datasets: [cifar10]
+    sigma_p: [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
+    seeds: sweep
+    policies: [tempo_threshold, tempo_dpp, best_oracle, static]   # best_oracle filled from E-T1
+  et5:                                           # E-T5 ablations
+    enabled: true
+    datasets: [cifar10]
+    sigma_p: [0.05]
+    missions: [sustained]
+    seeds: sweep
+    mpc_horizons: [5, 10, 20]
+    dpp_V: [0.5, 1.0, 2.0]
+  et6:                                           # E-T6 online-regret (long horizon)
+    enabled: true
+    datasets: [cifar10]
+    sigma_p: [0.05]
+    rounds: 300
+    seeds: sweep
+
+# ---------------------------------------------------------------- CloakFL
+cloak:
+  enabled: true
+  prior_client_std_m: 100.0                       # A1 coarse-registration prior (design §2.2)
+  sigma_d: 1.0                                    # M2 dither variance knob
+  entanglement:                                   # E-C1 (GATE 2) — analytic
+    r_floor: 10.0
+    n_mc: 100
+    snr_up: 3750.0                                # campaign-cumulative effective uplink SNR
+    snr_target: 375.0
+  dither:                                         # E-C2 (GATE 3) — analytic a/b
+    snr_eve: 10.0
+    sigma_d: 1.0
+  ec2c:                                           # E-C2c short FL run (M2 on/off, acc delta ~0)
+    enabled: true                                 # m1 (M2 off) vs m1_m2 (M2 on): SAME selection,
+    datasets: [cifar10]                           # only the zero-sum dither differs -> acc identical
+    rounds: 30
+    seeds: sweep
+    modes: [m1, m1_m2]
+  ec3:                                            # E-C3 privacy-utility frontier (headline)
+    datasets: [cifar10, emnist]
+    r_floors: [0.3, 0.5, 1.0, 2.0, 5.0, 10.0]
+    seeds: headline
+    modes: [uncapped, m1, m1_m2, m1_m2_m3, random, dp_gaussian, coarse_grid, secagg_only, uniform_power]
+  ec4:                                            # E-C4 leakage measurement (re-score existing) — analytic
+    point: A_datasets=cifar10
+    seeds: sweep
+    rerun_top9_if_missing: true
+  ec5:                                            # E-C5 composition & rotation (long horizon)
+    enabled: true
+    datasets: [cifar10]
+    rounds: 300
+    r_floors: [1.0, 10.0]
+    seeds: sweep
+    modes: [uncapped, m1]
+
+# ---------------------------------------------------------------- gates
+gates:
+  strict_default: true
+  gate1_dominance_pp: 1.0                          # >=1.0 pp accuracy dominance at matched tracking
+  gate2_retained: 0.50                             # >=50% target log-det retained at 10 m floor
+  gate3_inflation: 10.0                            # >=10x eavesdropper CRB inflation

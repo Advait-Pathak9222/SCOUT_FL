@@ -48,6 +48,7 @@ from scout_fl.selection.snr_based import SNRSelector
 from scout_fl.sim.aircomp import aggregation_mse, min_gain_for_mse
 from scout_fl.sim.channel import comm_channel_gains
 from scout_fl.sim.energy_latency import round_energy_latency
+from scout_fl.sim.nonstationary import WirelessISACNonstationarity
 from scout_fl.utils.config import load_config, to_plain
 from scout_fl.utils.device import describe_device, resolve_device
 from scout_fl.utils.logging_utils import RunLogger
@@ -190,6 +191,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     fair = FairnessUtility(K)
     sensing = SensingUtility(scn.fim, scn.j0, scn.w)              # static across rounds
     full = list(range(K))
+    ns_model = WirelessISACNonstationarity(cfg, scn, g, base_seed)
 
     aircomp_on = bool(cfg.aircomp.enabled)
     # Physical units (genuine link budget) override the normalized P/sigma2/model_bits/cpu_cycles
@@ -242,6 +244,15 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
 
     for t in range(rounds):
         print(f"[run] method={method} seed={base_seed} round={t + 1}/{rounds}", flush=True)
+        ns_diag = {}
+        g_round = np.asarray(g, dtype=float)
+        if ns_model.enabled:
+            ns_state = ns_model.round_state(t)
+            g_round = ns_state.channel_gains
+            scn.snr = ns_state.sensing_snr
+            scn.fim = ns_state.fim
+            sensing = SensingUtility(scn.fim, scn.j0, scn.w)
+            ns_diag.update(ns_state.diagnostics)
         g_flat = server.global_flat()
         # --- probe every client on the current global model (loss + grad embedding) ---
         tic = time.perf_counter()
@@ -255,6 +266,9 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             losses[k] = lk
             embs.append(ek)
         embs = np.stack(embs)
+        if ns_model.enabled:
+            losses, embs, probe_diag = ns_model.adjust_probes(t, losses, embs)
+            ns_diag.update(probe_diag)
         probe_time = time.perf_counter() - tic
 
         # --- composite SCOUT-FL utility (real embeddings; no placeholders) ---
@@ -271,7 +285,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         # per-client latency = comm time (channel-dependent) + compute time (per-client
         # compute-speed heterogeneity) + sensing time. The per-client compute term makes
         # latency NOT a pure function of channel gain, so FedCS/ISCC selectors differ from comm_only.
-        _rate = cfg.aircomp.bandwidth * np.log2(1.0 + P * np.asarray(g) / sigma2)
+        _rate = cfg.aircomp.bandwidth * np.log2(1.0 + P * np.asarray(g_round) / sigma2)
         _het = scn.compute_het if getattr(scn, "compute_het", None) is not None else np.ones(K)
         per_client_latency = (model_bits / np.clip(_rate, 1e-9, None)
                               + cpu_cycles / (cfg.energy.cpu_freq * _het) + cfg.energy.t_sense)
@@ -281,7 +295,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         twin_feats, learn_mult = None, None
         if use_twin:
             twin_feats = np.stack([np.ones(K), _zscore(losses),
-                                   _zscore(np.linalg.norm(embs, axis=1)), _zscore(g)], axis=1)
+                                   _zscore(np.linalg.norm(embs, axis=1)), _zscore(g_round)], axis=1)
             preds = twin_feats @ twin.w
             learn_mult = 1.0 + twin_trust * np.tanh(_zscore(preds))
 
@@ -293,23 +307,23 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             feasible = None
             if aircomp_on and mse_eps is not None:
                 g_min = min_gain_for_mse(mse_eps, budget, P, sigma2)
-                feasible = lambda S, k: g[k] >= g_min          # AirComp-MSE gate
+                feasible = lambda S, k: g_round[k] >= g_min          # AirComp-MSE gate
             res = ScoutGreedy().select(utility=total, num_clients=K, budget=budget, feasible=feasible)
         elif method == "scout_v2":
             def penalty_fn(S, k):                              # soft primal-dual MSE penalty (no hard gate)
-                mse_k = aggregation_mse(g, S + [k], power=P, sigma2=sigma2)
+                mse_k = aggregation_mse(g_round, S + [k], power=P, sigma2=sigma2)
                 return duals.mu.get("mse", 0.0) * max(0.0, mse_k - (mse_eps or 0.0))
             res = ScoutGreedy().select(utility=total, num_clients=K, budget=budget, penalty_fn=penalty_fn)
         elif method == "jedi" or method in _JEDI_ABLATIONS:    # joint experimental-design (+ ablations)
             abl = _JEDI_ABLATIONS.get(method, {})
             deficit = np.zeros(K) if abl.get("_no_fairness") else fair_dual.deficit
             jkw = {k: v for k, v in abl.items() if not k.startswith("_")}
-            joint = JointInformationUtility(sensing, coverage, learning, deficit, g,
+            joint = JointInformationUtility(sensing, coverage, learning, deficit, g_round,
                                             power=P, sigma2=sigma2, learn_mult=learn_mult, **jkw)
             feasible = None
             if abl.get("_hard_gate") and aircomp_on and mse_eps is not None:
                 g_min = min_gain_for_mse(mse_eps, budget, P, sigma2)
-                feasible = lambda S, k: g[k] >= g_min          # SCOUT-v1-style hard MSE gate
+                feasible = lambda S, k: g_round[k] >= g_min          # SCOUT-v1-style hard MSE gate
             res = ScoutGreedy(use_lazy=False).select(utility=joint, num_clients=K, budget=budget,
                                                      feasible=feasible)
             diag = _jedi_diagnostics(joint, fair_dual, sensing, coverage, learning, res.selected,
@@ -319,10 +333,10 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             # Ablations zero out individual terms via sense_scale / rho_v / beta at init time.
             # Build features from current probe: [1, loss_z, grad_norm_z, channel_z, recency]
             vis_feats = vis_model.build_features(
-                losses, np.linalg.norm(embs, axis=1), np.asarray(g))
+                losses, np.linalg.norm(embs, axis=1), np.asarray(g_round))
             vis_scores = vis_model.score_all(vis_feats)
             # Primal-dual soft MSE penalty (same as SCOUT-v2; no hard gate)
-            mse_k = np.array([aggregation_mse(g, [k], power=P, sigma2=sigma2) for k in range(K)])
+            mse_k = np.array([aggregation_mse(g_round, [k], power=P, sigma2=sigma2) for k in range(K)])
             resource_cost = duals.mu.get("mse", 0.0) * np.maximum(0.0, mse_k - (mse_eps or 0.0))
             net_scores = vis_scores - resource_cost
             order = np.argsort(-net_scores)
@@ -338,7 +352,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         elif method in BASELINE_REGISTRY:
             res = BASELINE_REGISTRY[method].select(
                 K=K, budget=budget, rng=rng, sensing=sensing, learning=learning,
-                g=g, snr_scores=scn.snr.sum(axis=1), losses=losses, embeddings=embs,
+                g=g_round, snr_scores=scn.snr.sum(axis=1), losses=losses, embeddings=embs,
                 grad_norm=np.linalg.norm(embs, axis=1), participation=participation.copy(),
                 age=fair.age.copy(), latency=per_client_latency, P=P, sigma2=sigma2, mse_eps=mse_eps)
         else:
@@ -362,7 +376,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         # --- aggregate (FedAvg; OTA-distorted for OTA-FL/ISCC methods) + apply ---
         tic = time.perf_counter()
         ota_this = True if method in _OTA_FORCE_ON else (False if method in _OTA_FORCE_OFF else ota_on)
-        mse = aggregation_mse(g, selected, power=P, sigma2=sigma2) if aircomp_on else 0.0
+        mse = aggregation_mse(g_round, selected, power=P, sigma2=sigma2) if aircomp_on else 0.0
         if method in ("scout_v2", "vismaya", *_VISMAYA_ABLATIONS) and aircomp_on:
             duals.update({"mse": float(mse)})                  # dual ascent on realized violation
         agg = aggregate(updates, counts, ota=ota_this, mse=mse, scale=ota_scale, rng=rng)
@@ -388,7 +402,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
                         twin_trust = float(np.clip(c, 0.0, 1.0))  # bad twin (c<=0) -> ignored
             prev_loss = test_loss
 
-        el = round_energy_latency(selected, g, power=P, sigma2=sigma2,
+        el = round_energy_latency(selected, g_round, power=P, sigma2=sigma2,
                                   bandwidth=cfg.aircomp.bandwidth, model_bits=model_bits,
                                   cpu_cycles=cpu_cycles, cpu_freq=cfg.energy.cpu_freq,
                                   kappa=cfg.energy.kappa, e_sense=cfg.energy.e_sense,
@@ -417,6 +431,10 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         }
         row.update(diag)                                       # JEDI-FL diagnostics
         row.update(vis_diag)                                   # VISMAYA-FL diagnostics
+        row.update(ns_diag)                                    # opt-in non-stationary wireless/ISAC diagnostics
+        if getattr(res, "info", None):
+            row.update({k: (round(float(v), 6) if isinstance(v, (float, np.floating)) else v)
+                        for k, v in res.info.items()})
 
         # VISMAYA generative model update: call AFTER agg (need actual grad norms).
         # All ablation variants share the same update logic so their P_m and ridge

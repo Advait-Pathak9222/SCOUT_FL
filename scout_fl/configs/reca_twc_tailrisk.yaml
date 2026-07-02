@@ -1,0 +1,43 @@
+experiment: reca_twc_tailrisk
+seed: 0
+output_dir: outputs
+rounds: 150
+first_shift_round: 50
+first_shift_end: 100
+second_shift_round: 1000
+
+network:
+  num_clients: 100
+  budget: 10
+
+wireless:
+  stressors: [severe_fades, sensing_occlusion, target_ambiguity, blockage, mse_spikes, high_mobility]
+  uplink_snr_db: 12
+  sensing_snr_db: 12
+  blockage_probability: 0.25
+  power_budget: 0.8
+  bandwidth_budget: 1.0
+  latency_budget: 0.8
+  energy_budget: 0.8
+  aircomp_mse_threshold: 0.05
+
+sensing:
+  num_targets: 5
+  crb_threshold: 1.0
+  sensing_resource_budget: 0.8
+
+reca:
+  feature_dim: 6
+  output_dim: 6
+  tau_reuse: 0.7
+  trigger_tau: 0.2
+  risk_mode: cvar
+  log_wireless_metrics: true
+  log_sensing_metrics: true
+  log_adapter_metrics: true
+
+selection:
+  methods: [reca, reca_mean_risk, reca_no_risk, reca_no_overwhelm, ota_fedavg, aircomp_mse_min, fed_iscc, iscc_air_feel, asaad]
+
+metrics:
+  log: [crb_cvar, aircomp_mse_cvar, worst_region_error, latency_violation, energy_violation, mse_violation, rare_failure_accuracy]
