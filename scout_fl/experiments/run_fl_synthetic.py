@@ -174,6 +174,27 @@ def _jedi_diagnostics(joint, fair_dual, sensing, coverage, learning, selected,
     }
 
 
+def _parse_eps_schedule(spec):
+    """Parse ``constraints.mse_eps_schedule`` into {round: eps}.
+
+    Accepts the compact CLI string "75:1.5e-4,120:1e-3", a mapping, or a list of
+    [round, eps] pairs. Rounds are 0-based; at the START of round t the aggregation
+    budget becomes eps and the dual limit follows. Empty/None -> no schedule, so the
+    default behaviour of every existing experiment is unchanged. Used by the TCCN
+    cognitive-adaptation experiment (scripts/tccn_experiments.sh, E-R1)."""
+    if not spec:
+        return {}
+    if isinstance(spec, str):
+        out = {}
+        for part in spec.split(","):
+            r, _, e = part.partition(":")
+            out[int(r.strip())] = float(e.strip())
+        return out
+    if isinstance(spec, dict):
+        return {int(k): float(v) for k, v in spec.items()}
+    return {int(r): float(e) for r, e in spec}
+
+
 def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             input_shape, num_classes, base_seed, out_path=None, meta=None):
     """Run a full federated training for one selection ``method``; return rows + participation.
@@ -205,6 +226,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         model_bits, cpu_cycles = float(cfg.aircomp.model_bits), float(cfg.energy.cpu_cycles)
     mse_eps = cfg.constraints.mse_agg_max
     duals = DualState({"mse": mse_eps}, lr=float(cfg.constraints.get("dual_lr", 0.5)))  # SCOUT-FL v2
+    eps_schedule = _parse_eps_schedule(cfg.constraints.get("mse_eps_schedule"))
     fair_dual = ParticipationDual(K, budget,                # JEDI participation fairness
                                   lr=float(cfg.objectives.get("fair_dual_lr", 1.0)))
     ota_on = bool(cfg.aircomp.get("ota_distortion", False))
@@ -253,6 +275,11 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             scn.fim = ns_state.fim
             sensing = SensingUtility(scn.fim, scn.j0, scn.w)
             ns_diag.update(ns_state.diagnostics)
+        if t in eps_schedule:               # mid-run budget change (cognitive-adaptation experiment)
+            mse_eps = eps_schedule[t]
+            if "mse" in duals.limits:
+                duals.limits["mse"] = float(mse_eps)
+            print(f"[eps-schedule] round {t}: aggregation-MSE budget -> {mse_eps:g}", flush=True)
         g_flat = server.global_flat()
         # --- probe every client on the current global model (loss + grad embedding) ---
         tic = time.perf_counter()
@@ -424,6 +451,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             # P2 primal-dual feasibility: the MSE dual mu and the realized constraint violation.
             "dual_mse": round(float(duals.mu.get("mse", 0.0)), 6),
             "mse_violation": round(float(max(0.0, mse - (mse_eps or 0.0))), 8),
+            "mse_eps": (round(float(mse_eps), 8) if mse_eps is not None else None),
             "energy": round(float(el["energy"]), 6), "latency": round(float(el["latency"]), 6),
             "probe_time": round(probe_time, 4), "select_time": round(sel_time, 5),
             "train_time": round(train_time, 4), "agg_time": round(agg_time, 5),

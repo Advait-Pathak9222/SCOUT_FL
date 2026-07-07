@@ -1,0 +1,57 @@
+{
+ "config": "scout_fl/configs/campaign_main.yaml",
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4
+ ],
+ "gamma_mean": 0.9994486078517569,
+ "gamma_std": 0.0001316686971964697,
+ "greedy_factor_mean": 0.6322662848377313,
+ "classic_factor": 0.6321205588285577,
+ "per_seed": {
+  "0": {
+   "gamma": 0.999371613799777,
+   "greedy_factor": 0.6322866360136867,
+   "classic_factor": 0.6321205588285577,
+   "min_ratio": 0.0006283862002229345,
+   "median_ratio": 0.0018122026313599445,
+   "clients_evaluated": 100
+  },
+  "1": {
+   "gamma": 0.9994834717325467,
+   "greedy_factor": 0.6322570682623974,
+   "classic_factor": 0.6321205588285577,
+   "min_ratio": 0.0005165282674533434,
+   "median_ratio": 0.0018391731591180557,
+   "clients_evaluated": 100
+  },
+  "2": {
+   "gamma": 0.9995983834947939,
+   "greedy_factor": 0.6322266953762725,
+   "classic_factor": 0.6321205588285577,
+   "min_ratio": 0.00040161650520609174,
+   "median_ratio": 0.0011365374695319886,
+   "clients_evaluated": 100
+  },
+  "3": {
+   "gamma": 0.9995251240816303,
+   "greedy_factor": 0.6322460586825479,
+   "classic_factor": 0.6321205588285577,
+   "min_ratio": 0.00047487591836965467,
+   "median_ratio": 0.0017095654725446494,
+   "clients_evaluated": 100
+  },
+  "4": {
+   "gamma": 0.9992644461500367,
+   "greedy_factor": 0.6323149658537516,
+   "classic_factor": 0.6321205588285577,
+   "min_ratio": 0.0007355538499633149,
+   "median_ratio": 0.0019170313902616856,
+   "clients_evaluated": 100
+  }
+ },
+ "note": "gamma is the total curvature of the normalised sensing utility U_sense(S)-U_sense(empty); greedy factor is (1/gamma)(1-e^-gamma) per Conforti-Cornuejols 1984 (paper Remark 3)."
+}

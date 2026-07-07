@@ -1,0 +1,82 @@
+{
+ "points": [
+  "A_datasets=emnist",
+  "A_datasets=fashion_mnist",
+  "A_datasets=uci_har",
+  "A_datasets=cifar10",
+  "A_datasets=cifar100",
+  "A_learning_partition=iid",
+  "A_learning_partition=spatial",
+  "A_learning_noniid=0.1",
+  "A_learning_noniid=0.3",
+  "A_learning_noniid=0.5",
+  "B_wireless_channel=rayleigh",
+  "B_wireless_channel=rician",
+  "B_wireless_snr=0",
+  "B_wireless_snr=-10",
+  "B_wireless_snr=-15",
+  "B_wireless_snr=-20",
+  "B_wireless_snr=-25",
+  "B_wireless_snr=-30",
+  "B_wireless_snr=-35",
+  "C_sensing_targets=2",
+  "C_sensing_targets=3",
+  "C_sensing_targets=5",
+  "C_sensing_kangle=0.02",
+  "C_sensing_kangle=0.05",
+  "C_sensing_kangle=0.1"
+ ],
+ "median_gap_pp": {
+  "scout_v2": 1.2850000000000028,
+  "collabsensefed": 2.624999999999994,
+  "sensing_native": 2.9850000000000043,
+  "asaad": 9.759999999999996,
+  "fixed_weighted": 3.9750000000000005,
+  "fed_iscc": 17.604999999999997,
+  "ota_fl_iscc": 0.0,
+  "iscc_air_feel": 18.97999999999999,
+  "fedavg_iscc": 16.189999999999998,
+  "fedsgd_iscc": 22.664999999999992,
+  "crb_only": 10.139999999999993,
+  "sensing_only": 12.9
+ },
+ "pareto_pct_final": {
+  "scout_v2": 96.0,
+  "collabsensefed": 72.0,
+  "sensing_native": 96.0,
+  "asaad": 88.0,
+  "fixed_weighted": 36.0,
+  "fed_iscc": 0.0,
+  "ota_fl_iscc": 72.0,
+  "iscc_air_feel": 0.0,
+  "fedavg_iscc": 0.0,
+  "fedsgd_iscc": 0.0,
+  "crb_only": 80.0,
+  "sensing_only": 4.0
+ },
+ "pareto_pct_mean": {
+  "scout_v2": 96.0,
+  "collabsensefed": 84.0,
+  "sensing_native": 100.0,
+  "asaad": 88.0,
+  "fixed_weighted": 20.0,
+  "fed_iscc": 0.0,
+  "ota_fl_iscc": 72.0,
+  "iscc_air_feel": 0.0,
+  "fedavg_iscc": 0.0,
+  "fedsgd_iscc": 0.0,
+  "crb_only": 80.0,
+  "sensing_only": 4.0
+ },
+ "convention_max_delta_pp": 16.0,
+ "scout_dominators_final": {
+  "A_learning_noniid=0.1": [
+   "sensing_native"
+  ]
+ },
+ "scout_dominators_mean": {
+  "A_learning_noniid=0.1": [
+   "sensing_native"
+  ]
+ }
+}
