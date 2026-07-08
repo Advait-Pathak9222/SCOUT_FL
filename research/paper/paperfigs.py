@@ -660,22 +660,21 @@ def fig_rmse_crb():
         crb_curve.append(crb)
         # Monte-Carlo estimator: each client gives a noisy position measurement with
         # covariance = inverse of its own FIM; fuse by information averaging (BLUE).
-        errs = []
+        # 20k trials keep the sampling error of the empirical RMSE below ~0.5%, so the
+        # curve sits on the bound instead of fluctuating visibly around it.
+        trials = 20000
         Ji = per_client_target_fim(geom, np.full((clients.shape[0], 1), snr), kr, ka)[:, 0]
-        for _ in range(400):
-            info = np.zeros((2, 2)); info_x = np.zeros(2)
-            for k in range(clients.shape[0]):
-                Jk = Ji[k] + 1e-6 * np.eye(2)
-                Ck = np.linalg.inv(Jk)
-                z = target[0] + rng.multivariate_normal([0, 0], Ck)
-                info += Jk; info_x += Jk @ z
-            xhat = np.linalg.solve(info, info_x)
-            errs.append(np.sum((xhat - target[0]) ** 2))
-        rmse_curve.append(np.sqrt(np.mean(errs)))
+        info = np.zeros((2, 2)); info_x = np.zeros((trials, 2))
+        for k in range(clients.shape[0]):
+            Jk = Ji[k] + 1e-6 * np.eye(2)
+            z = target[0] + rng.multivariate_normal([0, 0], np.linalg.inv(Jk), size=trials)
+            info += Jk; info_x += z @ Jk.T
+        xhat = np.linalg.solve(info, info_x.T).T
+        rmse_curve.append(np.sqrt(np.mean(np.sum((xhat - target[0]) ** 2, axis=1))))
     fig, ax = plt.subplots(figsize=(3.5, 2.4)); bu.floating_axes(ax); bu.soft_grid(ax, "both")
-    ax.plot(snr_db, crb_curve, color=bu.INK, lw=1.6, ls="--", label="$\\sqrt{\\mathrm{CRB}}$ floor", zorder=4)
-    ax.plot(snr_db, rmse_curve, color=c(HEAD), lw=2.0, marker="o", ms=4, mec="white", mew=0.8,
-            label="empirical RMSE", zorder=5)
+    ax.plot(snr_db, crb_curve, color=bu.INK, lw=1.4, ls="--", label="$\\sqrt{\\mathrm{CRB}}$ floor", zorder=5)
+    ax.plot(snr_db, rmse_curve, "o", color=c(HEAD), ms=4.5, mec="white", mew=0.6,
+            label="empirical RMSE", zorder=6)
     ax.set_yscale("log"); ax.set_xlabel("sensing SNR (dB)")
     ax.set_ylabel("localization error (log)")
     ax.legend(loc="upper right", fontsize=8, handletextpad=0.4, handlelength=1.6)

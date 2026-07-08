@@ -252,7 +252,7 @@ Let $U^\star$ be the maximum of $U$ over sets of size $K$. The greedy rule~\eqre
 \end{proposition}
 
 \begin{remark}[Curvature-sharpened guarantee]\label{rem:curvature}
-The constant in Proposition~\ref{prop:greedy} improves when the utility is not fully curved. Let the total curvature of $U$ be
+The constant in Proposition~\ref{prop:greedy} improves when the utility is not fully curved. Normalise $U$ so that $U(\emptyset)=0$ and let its total curvature be
 $\gamma_U=1-\min_{k\in\calN}\big[U(\calN)-U(\calN\setminus\{k\})\big]/U(\{k\})\in[0,1]$.
 Greedy selection under a cardinality constraint then attains the factor $\frac{1}{\gamma_U}\big(1-e^{-\gamma_U}\big)$, which is at least $1-1/e$ and strictly exceeds it whenever $\gamma_U<1$~\cite{conforti1984}. Both components of $U$ satisfy $\gamma_U<1$ in this system. The prior $\bJ_0\succ 0$ keeps every sensing marginal strictly positive even on the full ground set, and the facility-location term retains positive marginals whenever some client remains the best cover for at least one peer. At the operating point of Section~\ref{sec:results} the prior is deliberately weak ($\lambda_0=10^{-3}$), so the measured curvature of the sensing utility is close to one ($\gamma\approx 0.999$ across the campaign scenarios) and the sharpened factor exceeds the classical constant only marginally ($0.6323$ against $0.6321$). The refinement is stated for completeness. It becomes material when the prior carries substantial target information, for example when knowledge accumulates across rounds.
 \end{remark}
@@ -260,11 +260,11 @@ Greedy selection under a cardinality constraint then attains the factor $\frac{1
 Proposition~\ref{prop:greedy} applies to $U$, whereas the inner loop of Algorithm~\ref{alg:scout} optimises the penalised objective $U_\mu$. The following proposition delineates the guarantee that holds in each regime.
 
 \begin{proposition}[Guarantees for the penalised objective]\label{prop:penalised}
-Write $U_\mu=U-\mu(\mathrm{MSE}-\varepsilon)$. \emph{(i)} When the constraint is slack, as at the main operating point of Section~\ref{sec:results} (realised aggregation MSE $2\times10^{-4}$ against a budget $\varepsilon=10^{-3}$), the dual variable satisfies $\mu=0$, hence $U_\mu=U$ and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} applies exactly. \emph{(ii)} For $\mu>0$, the penalty $-\mu\,\mathrm{MSE}(\calS)$ is, under the channel-inversion model~\eqref{eq:mse}, a min-based set-coupled term that is neither modular nor submodular; hence $U_\mu$ is not guaranteed submodular and the $(1-1/e)$ bound does not transfer to $U_\mu$. In this regime feasibility is delivered by the outer dual update~\eqref{eq:dual}, a separate no-regret mechanism analysed in Proposition~\ref{prop:pd}, while the greedy inner step, which excludes non-positive marginals, keeps the selection within the monotone-improvement region. No constant-factor guarantee is claimed for $U_\mu$ in the binding regime; deterministic greedy selection admits no such guarantee for non-monotone submodular objectives, for which the relevant bound is the $1/e$ factor of randomised greedy~\cite{buchbinder2014}.
+Write $U_\mu=U-\mu(\mathrm{MSE}-\varepsilon)$. \emph{(i)} When the constraint is slack, as at the main operating point of Section~\ref{sec:results} (realised aggregation MSE $2\times10^{-4}$ against a budget $\varepsilon=10^{-3}$), the dual variable satisfies $\mu=0$, hence $U_\mu=U$ and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} applies exactly. \emph{(ii)} For $\mu>0$, the penalty $-\mu\,\mathrm{MSE}(\calS)$ is, under the channel-inversion model~\eqref{eq:mse}, a min-based set-coupled term that is neither modular nor submodular; hence $U_\mu$ is not guaranteed submodular and the $(1-1/e)$ bound does not transfer to $U_\mu$. In this regime feasibility is delivered by the outer dual update~\eqref{eq:dual}, a separate mechanism analysed in Proposition~\ref{prop:pd}, while the greedy inner step still adds the largest available penalised marginal at each of the $K$ additions. No constant-factor guarantee is claimed for $U_\mu$ in the binding regime; deterministic greedy selection admits no such guarantee for non-monotone submodular objectives, for which the relevant bound is the $1/e$ factor of randomised greedy~\cite{buchbinder2014}.
 \end{proposition}
 
 \begin{proposition}[Feasibility and regret of the primal--dual loop]\label{prop:pd}
-Suppose $\mathrm{MSE}(\calS_t)\in[0,G]$ for all $t$ and let $\eta=\Theta(1/\sqrt{T})$. Then the time-averaged constraint violation vanishes, $\frac{1}{T}\sum_{t}(\mathrm{MSE}(\calS_t)-\varepsilon)\le O(1/\sqrt{T})$, and the cumulative utility gap to the best fixed feasible selection in hindsight is $O(\sqrt{T})$; the loop is no-regret.
+Suppose $\mathrm{MSE}(\calS_t)\in[0,G]$ for all $t$, that every round admits a strictly feasible selection $\calS^{\circ}_t$ with $\mathrm{MSE}(\calS^{\circ}_t)\le\varepsilon-\delta$ for some $\delta>0$, and that the inner step returns a set whose penalised utility is at least that of $\calS^{\circ}_t$ (enforceable at no extra cost by retaining the better of the greedy set and any known feasible set). Let $\eta=\Theta(1/\sqrt{T})$. Then the dual iterates remain bounded, the time-averaged constraint violation satisfies $\frac{1}{T}\sum_{t}(\mathrm{MSE}(\calS_t)-\varepsilon)\le O(1/\sqrt{T})$, and the cumulative utility gap to the best fixed feasible selection in hindsight is $O(\sqrt{T})$, so the loop is no-regret.
 \end{proposition}
 
 \begin{proposition}[CRB achievability]\label{prop:crb}
@@ -283,7 +283,7 @@ Under (A1)--(A3) and any $\eta_\ell\le 1/L$, the iterates of Algorithm~\ref{alg:
 +L\eta_\ell\Big(\sigma_u^{2}+\frac{\overline{\mathrm{MSE}}_T}{\eta_\ell^{2}}\Big),
 \label{eq:learnbound}
 \end{equation}
-where $\overline{\mathrm{MSE}}_T=\frac{1}{T}\sum_t\mathrm{MSE}(\calS_t)$. By Proposition~\ref{prop:pd} the dual loop guarantees $\overline{\mathrm{MSE}}_T\le\varepsilon+O(1/\sqrt{T})$, so the bound converges to a noise floor that scales linearly in the prescribed budget $\varepsilon$. With a diminishing local scale $\eta_\ell=\Theta(1/\sqrt{T})$ the average squared gradient norm is $O\big((1+\sigma_u^{2})/\sqrt{T}+\sqrt{T}\,\varepsilon\big)$, which for a budget $\varepsilon=O(1/T)$ recovers the standard $O(1/\sqrt{T})$ rate of noiseless federated SGD.
+where $\overline{\mathrm{MSE}}_T=\frac{1}{T}\sum_t\mathrm{MSE}(\calS_t)$. By Proposition~\ref{prop:pd} the dual loop guarantees $\overline{\mathrm{MSE}}_T\le\varepsilon+O(1/\sqrt{T})$, so the bound converges to a noise floor that scales linearly in the prescribed budget $\varepsilon$. With a diminishing local scale $\eta_\ell=\Theta(1/\sqrt{T})$ the average squared gradient norm is $O\big((1+\sigma_u^{2})/\sqrt{T}+\sqrt{T}\,\overline{\mathrm{MSE}}_T\big)$, which recovers the standard $O(1/\sqrt{T})$ rate of noiseless federated SGD whenever the realised average error is at most of order $1/T$.
 \end{proposition}
 
 Proposition~\ref{prop:learn} is the quantitative payoff of the cognitive loop. The scheduler does not merely respect an operational constraint. Through~\eqref{eq:learnbound} the constraint level $\varepsilon$ becomes a design parameter with a provable effect on the trained model, and the dual price is the mechanism that delivers the required time-averaged error without manual tuning. At the main operating point the budget is slack by an order of magnitude, so the noise floor in~\eqref{eq:learnbound} is dominated by the sampling variance $\sigma_u^2$.
@@ -506,7 +506,7 @@ Fig.~\ref{fig:adapt}(c) and (d) sweep the static budget into the binding regime.
 \end{figure}
 
 \subsection{Achievability of the CRB}
-Fig.~\ref{fig:rmse} relates the CRB optimised by the algorithm to the localisation error attained by a receiver. The FIM here is derived strictly from the multistatic radar observation model and is unrelated to the Fisher information sometimes used to characterise neural network loss landscapes. For a fixed geometry, a Monte-Carlo ML localisation is performed and its root-mean-square error (RMSE) is plotted against $\sqrt{\mathrm{CRB}}$ across a $30$ dB SNR range. The empirical RMSE tracks the CRB floor at every SNR, confirming Proposition 5. The CRB differences reported in this section therefore correspond to differences in achievable localisation accuracy.
+Fig.~\ref{fig:rmse} relates the CRB optimised by the algorithm to the localisation error attained by a receiver. The FIM here is derived strictly from the multistatic radar observation model and is unrelated to the Fisher information sometimes used to characterise neural network loss landscapes. For a fixed geometry, a Monte-Carlo ML localisation is performed and its root-mean-square error (RMSE) is plotted against $\sqrt{\mathrm{CRB}}$ across a $30$ dB SNR range. The empirical RMSE tracks the CRB floor at every SNR, confirming Proposition 5. Small excursions of the sample RMSE on either side of the bound are finite-sample Monte-Carlo fluctuation, since the bound constrains the true error covariance rather than any single empirical estimate. The CRB differences reported in this section therefore correspond to differences in achievable localisation accuracy.
 Sensing mutual information is an alternative metric for stochastic ISAC environments \cite{zhang2026integrated}. The CRB is adopted here because the additive FIM ties it directly to the geometry of the active set and makes the log-determinant utility submodular (Proposition 1), which is what enables the greedy guarantee, and because the CRB remains the metric around which contemporary ISAC designs are built~\cite{wang2024cramer,zhou2026crb}. Translating SMI into a submodular set function for client selection remains open.
 
 \begin{figure}[!t]
@@ -561,19 +561,13 @@ For part (ii), it suffices to exhibit the structural failure. From~\eqref{eq:mse
 \end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:pd}]
-Let $v_t=\mathrm{MSE}(\calS_t)-\varepsilon\in[-\varepsilon,\,G-\varepsilon]$ denote the per-round violation, so that the recursion~\eqref{eq:dual} reads $\mu_{t+1}=[\mu_t+\eta v_t]_+$. Squaring and using $([x]_+)^2\le x^2$,
+Let $v_t=\mathrm{MSE}(\calS_t)-\varepsilon\in[-\varepsilon,\,G-\varepsilon]$ denote the per-round violation, so that the recursion~\eqref{eq:dual} reads $\mu_{t+1}=[\mu_t+\eta v_t]_+$. Since $[x]_+\ge x$, summing the recursion gives $\sum_{t=1}^{T}v_t\le\mu_{T+1}/\eta$.
+
+Boundedness of the dual follows from strict feasibility. Let $U_{\max}$ and $U_{\min}$ bound the utility over sets of size $K$ and set $\bar\mu=(U_{\max}-U_{\min})/\delta$. Suppose $\mu_t>\bar\mu$ and $\mathrm{MSE}(\calS_t)>\varepsilon$. Then $U_{\mu_t}(\calS_t)\le U_{\max}$, whereas $U_{\mu_t}(\calS^{\circ}_t)\ge U_{\min}+\mu_t\delta>U_{\max}$, which contradicts the assumption that the inner step matches $\calS^{\circ}_t$ in penalised utility. Violations therefore occur only while $\mu_t\le\bar\mu$, and since a single update increases the dual by at most $\eta G$, induction from $\mu_1=0$ gives $\mu_t\le\bar\mu+\eta G$ for all $t$. Consequently
 \[
-\mu_{t+1}^2\;\le\;\mu_t^2+2\eta\,\mu_t v_t+\eta^2 v_t^2 .
+\frac{1}{T}\sum_{t=1}^{T}\big(\mathrm{MSE}(\calS_t)-\varepsilon\big)\;\le\;\frac{\bar\mu+\eta G}{\eta T}\;=\;O\!\Big(\frac{1}{\sqrt{T}}\Big)
 \]
-Summing from $t=1$ to $T$ and telescoping with $\mu_1=0$ gives
-\[
-0\;\le\;\mu_{T+1}^2\;\le\;2\eta\sum_{t=1}^{T}\mu_t v_t+\eta^2\sum_{t=1}^{T}v_t^2 ,
-\]
-hence $\sum_t \mu_t v_t\ge-\tfrac{\eta}{2}\sum_t v_t^2\ge-\tfrac{\eta}{2}TG^2$. Moreover, the recursion implies $\mu_{t+1}\ge\mu_t+\eta v_t$, so summing yields $\sum_{t=1}^{T}v_t\le\mu_{T+1}/\eta$. The recursion also bounds the dual iterates as $\mu_{t}\le\eta\sum_{s<t}[v_s]_+\le\eta T G$; combining with the drift inequality above and $\eta=\Theta(1/\sqrt{T})$ gives $\mu_{T+1}=O(\sqrt{T}\,\eta\,G)=O(G)$, and therefore
-\[
-\frac{1}{T}\sum_{t=1}^{T}\big(\mathrm{MSE}(\calS_t)-\varepsilon\big)\;\le\;\frac{\mu_{T+1}}{\eta T}\;=\;O\!\Big(\frac{1}{\sqrt{T}}\Big).
-\]
-For the regret claim, the recursion~\eqref{eq:dual} is projected online gradient ascent on the concave dual function with bounded subgradients $v_t$; standard online convex optimisation analysis with step size $\eta=\Theta(1/\sqrt{T})$ gives dual regret $O(\sqrt{T})$, and weak duality converts the dual regret into an $O(\sqrt{T})$ cumulative utility gap against the best fixed feasible selection in hindsight.
+for $\eta=\Theta(1/\sqrt{T})$. For the regret claim, the recursion~\eqref{eq:dual} is projected online gradient ascent on the concave dual function with bounded subgradients $v_t$ and bounded iterates. Standard online convex optimisation analysis with step size $\eta=\Theta(1/\sqrt{T})$ gives dual regret $O(\sqrt{T})$, and weak duality converts the dual regret into an $O(\sqrt{T})$ cumulative utility gap against the best fixed feasible selection in hindsight.
 \end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:crb}]
