@@ -1,0 +1,9 @@
+{
+ "t_cut": 75,
+ "seeds": 5,
+ "mu_peak": 0.5517255999999999,
+ "mse_pre_mean": 0.00020067,
+ "mse_post_mean": 0.00015157442666666665,
+ "eps_post": 0.00015,
+ "post_rounds_within_budget_frac": 0.6906666666666667
+}

@@ -956,9 +956,10 @@ def fig_adaptation():
 
 # ══════════════════════════════════ TCCN FIG 13 — budget sweep, soft vs hard (E-R2)
 def fig_eps_sweep():
-    """Paper Fig. 13 (TCCN E-R2): final accuracy of the soft primal-dual budget
-    against the hard gate as the aggregation budget eps tightens into the binding
-    regime. Backs the claim that the gap widens as the budget binds. Requires
+    """Paper Fig. 13 (TCCN E-R2): budget sweep. Panel (a) shows the realised
+    time-averaged aggregation MSE against the prescribed budget eps, with the
+    identity line: the soft primal-dual loop spends the whole budget, the hard
+    gate under-spends it. Panel (b) shows the accuracy consequence. Requires
     runs_tccn/eps_* (scripts/tccn_experiments.sh)."""
     import glob as _glob
     dirs = sorted(_glob.glob(os.path.join(ROOT, "runs_tccn", "eps_*")))
@@ -971,27 +972,46 @@ def fig_eps_sweep():
         except ValueError:
             continue
         for m in (HEAD, ABL):
-            accs = [r[-1]["test_acc"] for r in
-                    _load_tccn_rows(os.path.basename(d_), m)]
-            if accs:
-                rows.append((eps, m, np.mean(accs) * 100, np.std(accs, ddof=1) * 100))
+            runs = _load_tccn_rows(os.path.basename(d_), m)
+            if not runs: continue
+            accs = [r[-1]["test_acc"] for r in runs]
+            mses = [np.mean([rr["agg_mse"] for rr in r]) for r in runs]
+            rows.append((eps, m, np.mean(accs) * 100, np.std(accs, ddof=1) * 100,
+                         np.mean(mses)))
     if not rows:
         print("  (fig_eps_sweep: no complete runs yet - skipped)"); return
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.6))
-    bu.floating_axes(ax); bu.soft_grid(ax, "both")
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(3.5, 4.4), sharex=True)
+    for ax in (a1, a2): bu.floating_axes(ax); bu.soft_grid(ax, "both")
+
+    lab = {HEAD: "SCOUT-FL (soft)", ABL: "SCOUT-FL$^{\\dagger}$ (hard gate)"}
+    e_all = sorted({r[0] for r in rows})
+    a1.plot(e_all, e_all, color=bu.INK, lw=1.0, ls="--", zorder=3,
+            label="realised = budget")
     for m, mk in ((HEAD, "o"), (ABL, "s")):
         pts = sorted(r for r in rows if r[1] == m)
         if not pts: continue
-        e = [p[0] for p in pts]; a = [p[2] for p in pts]; s = [p[3] for p in pts]
-        hl = m == HEAD
-        ax.errorbar(e, a, yerr=s, fmt=f"-{mk}", color=c(m), lw=2.0 if hl else 1.4,
-                    ms=4.5 if hl else 4, mec="white", mew=0.6, capsize=2,
-                    elinewidth=1.0, zorder=6 if hl else 5,
-                    label="SCOUT-FL (soft)" if hl else "SCOUT-FL$^{\\dagger}$ (hard gate)")
-    ax.set_xscale("log")
-    ax.set_xlabel("aggregation-MSE budget  $\\varepsilon$  (log)")
-    ax.set_ylabel("final accuracy (%)")
-    ax.legend(loc="lower right", fontsize=8, handlelength=1.5, handletextpad=0.4)
-    fig.tight_layout(pad=0.3)
+        e = [p[0] for p in pts]; hl = m == HEAD
+        a1.plot(e, [p[4] for p in pts], f"-{mk}", color=c(m), lw=2.0 if hl else 1.4,
+                ms=4.5 if hl else 4, mec="white", mew=0.6, zorder=6 if hl else 5,
+                label=lab[m])
+        a2.errorbar(e, [p[2] for p in pts], yerr=[p[3] for p in pts], fmt=f"-{mk}",
+                    color=c(m), lw=2.0 if hl else 1.4, ms=4.5 if hl else 4,
+                    mec="white", mew=0.6, capsize=2, elinewidth=1.0,
+                    zorder=6 if hl else 5, label=lab[m])
+    a1.set_xscale("log"); a1.set_yscale("log")
+    a1.set_ylabel("realised MSE (time avg.)")
+    a1.legend(loc="upper left", fontsize=8, handlelength=1.5, handletextpad=0.4,
+              labelspacing=0.3)
+    bu.panel_tag(a1, "(a) the soft loop spends the whole budget", y=1.03)
+    a2.set_xlabel("aggregation-MSE budget  $\\varepsilon$  (log)")
+    a2.set_ylabel("final accuracy (%)")
+    bu.panel_tag(a2, "(b) accuracy across the budget range", y=1.03)
+    fig.tight_layout(pad=0.4, h_pad=1.6)
     bu.save(fig, os.path.join(FIG, "fig13_epsgate"))
+
+    os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
+    json.dump([{"eps": r[0], "method": r[1], "acc_mean": r[2], "acc_std": r[3],
+                "mse_mean": r[4]} for r in rows],
+              open(os.path.join(FIG, "stats", "eps_sweep.json"), "w"), indent=1)
+    print("  fig_eps_sweep: stats/eps_sweep.json written")
