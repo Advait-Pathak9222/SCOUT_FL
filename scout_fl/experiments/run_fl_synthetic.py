@@ -225,8 +225,24 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         P, sigma2 = float(cfg.aircomp.power), float(cfg.aircomp.sigma2)
         model_bits, cpu_cycles = float(cfg.aircomp.model_bits), float(cfg.energy.cpu_cycles)
     mse_eps = cfg.constraints.mse_agg_max
-    duals = DualState({"mse": mse_eps}, lr=float(cfg.constraints.get("dual_lr", 0.5)))  # SCOUT-FL v2
+    _dual_limit = 1.0 if (cfg.constraints.get("dual_normalized", False) and mse_eps) else mse_eps
+    duals = DualState({"mse": _dual_limit}, lr=float(cfg.constraints.get("dual_lr", 0.5)))  # SCOUT-FL v2
     eps_schedule = _parse_eps_schedule(cfg.constraints.get("mse_eps_schedule"))
+    # Normalized dual ascent (constraints.dual_normalized): the violation is expressed
+    # RELATIVE to the budget, v = mse/eps - 1, so the dual step eta operates on an O(1)
+    # quantity regardless of the absolute MSE scale. At any slack operating point the
+    # violation is negative under both conventions and mu stays exactly 0, so every
+    # slack-regime result (the whole main campaign) is bit-identical with or without
+    # this flag. Used by the TCCN binding-regime experiments (scripts/tccn_experiments.sh).
+    dual_norm = bool(cfg.constraints.get("dual_normalized", False))
+
+    def _mse_viol(mse_value, eps_value):
+        """Positive part of the (optionally normalized) budget violation."""
+        if eps_value is None:
+            return 0.0
+        if dual_norm:
+            return max(0.0, float(mse_value) / max(float(eps_value), 1e-30) - 1.0)
+        return max(0.0, float(mse_value) - float(eps_value))
     fair_dual = ParticipationDual(K, budget,                # JEDI participation fairness
                                   lr=float(cfg.objectives.get("fair_dual_lr", 1.0)))
     ota_on = bool(cfg.aircomp.get("ota_distortion", False))
@@ -277,7 +293,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             ns_diag.update(ns_state.diagnostics)
         if t in eps_schedule:               # mid-run budget change (cognitive-adaptation experiment)
             mse_eps = eps_schedule[t]
-            if "mse" in duals.limits:
+            if "mse" in duals.limits and not dual_norm:
                 duals.limits["mse"] = float(mse_eps)
             print(f"[eps-schedule] round {t}: aggregation-MSE budget -> {mse_eps:g}", flush=True)
         g_flat = server.global_flat()
@@ -339,7 +355,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         elif method == "scout_v2":
             def penalty_fn(S, k):                              # soft primal-dual MSE penalty (no hard gate)
                 mse_k = aggregation_mse(g_round, S + [k], power=P, sigma2=sigma2)
-                return duals.mu.get("mse", 0.0) * max(0.0, mse_k - (mse_eps or 0.0))
+                return duals.mu.get("mse", 0.0) * _mse_viol(mse_k, mse_eps)
             res = ScoutGreedy().select(utility=total, num_clients=K, budget=budget, penalty_fn=penalty_fn)
         elif method == "jedi" or method in _JEDI_ABLATIONS:    # joint experimental-design (+ ablations)
             abl = _JEDI_ABLATIONS.get(method, {})
@@ -364,7 +380,7 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             vis_scores = vis_model.score_all(vis_feats)
             # Primal-dual soft MSE penalty (same as SCOUT-v2; no hard gate)
             mse_k = np.array([aggregation_mse(g_round, [k], power=P, sigma2=sigma2) for k in range(K)])
-            resource_cost = duals.mu.get("mse", 0.0) * np.maximum(0.0, mse_k - (mse_eps or 0.0))
+            resource_cost = duals.mu.get("mse", 0.0) * np.array([_mse_viol(v, mse_eps) for v in mse_k])
             net_scores = vis_scores - resource_cost
             order = np.argsort(-net_scores)
             selected_arr = sorted(int(order[i]) for i in range(budget))
@@ -405,7 +421,11 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         ota_this = True if method in _OTA_FORCE_ON else (False if method in _OTA_FORCE_OFF else ota_on)
         mse = aggregation_mse(g_round, selected, power=P, sigma2=sigma2) if aircomp_on else 0.0
         if method in ("scout_v2", "vismaya", *_VISMAYA_ABLATIONS) and aircomp_on:
-            duals.update({"mse": float(mse)})                  # dual ascent on realized violation
+            # dual ascent on the realized violation; under dual_normalized the constraint is
+            # mse/eps <= 1, so the update sees an O(1) violation and eta needs no rescaling
+            _realized = (float(mse) / max(float(mse_eps), 1e-30) if (dual_norm and mse_eps)
+                         else float(mse))
+            duals.update({"mse": _realized})
         agg = aggregate(updates, counts, ota=ota_this, mse=mse, scale=ota_scale, rng=rng)
         server.apply_aggregated_update(g_flat, agg)
         agg_time = time.perf_counter() - tic

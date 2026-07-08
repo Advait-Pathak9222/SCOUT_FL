@@ -53,7 +53,7 @@ echo "[tccn] E-R1 cognitive adaptation: budget cut 1e-3 -> 1.5e-4 at round 75"
 python -m scout_fl.experiments.run_fl_synthetic --config "$CFG" ${QUICK[@]+"${QUICK[@]}"} \
     --override "fl.device=$DEVICE" "runs_dir=runs_tccn" "experiment=adapt_eps" \
     "seeds=$SEEDS" "selection.methods=$METHODS" \
-    "constraints.mse_eps_schedule=75:1.5e-4"
+    "constraints.dual_normalized=true" "constraints.mse_eps_schedule=75:1.5e-4"
 
 # ---------------------------------------------------------- E-R2 budget sweep
 for EPS in 5e-5 1e-4 1.5e-4 2e-4 1e-3; do
@@ -61,7 +61,7 @@ for EPS in 5e-5 1e-4 1.5e-4 2e-4 1e-3; do
     python -m scout_fl.experiments.run_fl_synthetic --config "$CFG" ${QUICK[@]+"${QUICK[@]}"} \
         --override "fl.device=$DEVICE" "runs_dir=runs_tccn" "experiment=eps_$EPS" \
         "seeds=$SEEDS" "selection.methods=$METHODS" \
-        "constraints.mse_agg_max=$EPS"
+        "constraints.dual_normalized=true" "constraints.mse_agg_max=$EPS"
 done
 
 # ---------------------------------------------------------- E-R3 curvature
