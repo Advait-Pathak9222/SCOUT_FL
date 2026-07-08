@@ -895,9 +895,9 @@ def _load_tccn_rows(tag, method):
 
 def fig_adaptation():
     """Paper Fig. 12 (TCCN E-R1): the dual price reacting to a mid-run budget cut.
-    Top panel: mu_t of SCOUT-FL (mean +/- std over seeds). Bottom: realised
-    aggregation MSE of SCOUT-FL and the hard-gate ablation against the stepped
-    budget eps(t). Requires runs_tccn/adapt_eps (scripts/tccn_experiments.sh)."""
+    Side-by-side panels: (a) mu_t of SCOUT-FL, (b) realised aggregation MSE of both
+    variants against the stepped budget, with explicit tick labels on every axis.
+    Requires runs_tccn/adapt_eps (scripts/tccn_experiments.sh)."""
     runs_v2 = _load_tccn_rows("adapt_eps", HEAD)
     runs_hg = _load_tccn_rows("adapt_eps", ABL)
     if not runs_v2:
@@ -908,37 +908,40 @@ def fig_adaptation():
         return np.array([[r[t].get(key, np.nan) for t in range(n)] for r in runs], float)
 
     mu = stack(runs_v2, "dual_mse"); mse_v2 = stack(runs_v2, "agg_mse")
-    eps = stack(runs_v2, "mse_eps")[0]              # schedule is deterministic
+    eps = stack(runs_v2, "mse_eps")[0]
     x = np.arange(mu.shape[1])
     t_cut = int(np.argmax(np.diff(eps) != 0) + 1) if np.any(np.diff(eps) != 0) else None
 
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(3.5, 4.2), sharex=True)
-    for ax in (a1, a2): bu.floating_axes(ax); bu.soft_grid(ax, "both")
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.5, 2.05))
+    for ax in (a1, a2):
+        bu.floating_axes(ax); bu.soft_grid(ax, "both")
+        ax.set_xticks([0, 75, 150]); ax.set_xlabel("round")
+        if t_cut:
+            ax.axvline(t_cut, color="#c0392b", lw=0.9, ls=(0, (2, 2)), zorder=2)
 
-    a1.plot(x, mu.mean(0), color=c(HEAD), lw=2.0, zorder=6)
+    a1.plot(x, mu.mean(0), color=c(HEAD), lw=1.8, zorder=6)
     a1.fill_between(x, mu.mean(0) - mu.std(0, ddof=1), mu.mean(0) + mu.std(0, ddof=1),
                     color=c(HEAD), alpha=.18, lw=0, zorder=4)
     a1.set_ylabel("dual price  $\\mu_t$")
-    bu.panel_tag(a1, "(a) the dual price reacts", y=1.03)
+    bu.panel_tag(a1, "(a)", y=1.02)
 
-    a2.plot(x, mse_v2.mean(0), color=c(HEAD), lw=2.0, zorder=6, label="SCOUT-FL")
+    a2.plot(x, mse_v2.mean(0), color=c(HEAD), lw=1.8, zorder=6, label="SCOUT-FL")
     if runs_hg:
         mse_hg = stack(runs_hg, "agg_mse")
-        a2.plot(x[:mse_hg.shape[1]], mse_hg.mean(0), color=c(ABL), lw=1.4, zorder=5,
+        a2.plot(x[:mse_hg.shape[1]], mse_hg.mean(0), color=c(ABL), lw=1.2, zorder=5,
                 label="SCOUT-FL$^{\\dagger}$ (hard gate)")
-    a2.plot(x, eps, color=bu.INK, lw=1.2, ls="--", zorder=7, label="budget $\\varepsilon(t)$")
-    a2.set_yscale("log"); a2.set_xlabel("communication round")
-    a2.set_ylabel("aggregation MSE")
-    a2.legend(loc="upper right", fontsize=8, handlelength=1.4, handletextpad=0.4,
-              labelspacing=0.3)
-    bu.panel_tag(a2, "(b) the realised error returns under budget", y=1.03)
-    if t_cut:
-        for ax in (a1, a2):
-            ax.axvline(t_cut, color="#c0392b", lw=1.0, ls=(0, (2, 2)), zorder=2)
-        a1.annotate("budget cut", (t_cut, a1.get_ylim()[1]), xytext=(4, -2),
-                    textcoords="offset points", ha="left", va="top", fontsize=8,
-                    color="#c0392b", style="italic")
-    fig.tight_layout(pad=0.4, h_pad=1.6)
+    a2.plot(x, eps, color=bu.INK, lw=1.1, ls="--", zorder=7, label="budget $\\varepsilon(t)$")
+    a2.set_yscale("log")
+    ticks = [1.5e-4, 2e-4, 5e-4, 1e-3]
+    a2.set_yticks(ticks); a2.set_yticklabels(["1.5", "2", "5", "10"])
+    a2.yaxis.set_minor_locator(plt.NullLocator())
+    a2.set_ylabel("agg. MSE  ($\\times 10^{-4}$)")
+    bu.panel_tag(a2, "(b)", y=1.02)
+
+    fig.legend(loc="lower center", ncol=3, fontsize=8, frameon=False,
+               bbox_to_anchor=(0.5, -0.015), handlelength=1.1, handletextpad=0.3,
+               columnspacing=0.7)
+    fig.tight_layout(rect=(0, 0.10, 1, 1), pad=0.35, w_pad=1.2)
     bu.save(fig, os.path.join(FIG, "fig12_adaptation"))
 
     os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
@@ -956,11 +959,9 @@ def fig_adaptation():
 
 # ══════════════════════════════════ TCCN FIG 13 — budget sweep, soft vs hard (E-R2)
 def fig_eps_sweep():
-    """Paper Fig. 13 (TCCN E-R2): budget sweep. Panel (a) shows the realised
-    time-averaged aggregation MSE against the prescribed budget eps, with the
-    identity line: the soft primal-dual loop spends the whole budget, the hard
-    gate under-spends it. Panel (b) shows the accuracy consequence. Requires
-    runs_tccn/eps_* (scripts/tccn_experiments.sh)."""
+    """Paper Fig. 13 (TCCN E-R2): budget sweep, side-by-side panels with explicit
+    tick labels. (a) realised time-averaged MSE against the budget with the identity
+    line. (b) final accuracy. Requires runs_tccn/eps_*."""
     import glob as _glob
     dirs = sorted(_glob.glob(os.path.join(ROOT, "runs_tccn", "eps_*")))
     if not dirs:
@@ -981,10 +982,15 @@ def fig_eps_sweep():
     if not rows:
         print("  (fig_eps_sweep: no complete runs yet - skipped)"); return
 
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(3.5, 4.4), sharex=True)
-    for ax in (a1, a2): bu.floating_axes(ax); bu.soft_grid(ax, "both")
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.5, 2.05))
+    xt = [5e-5, 1e-4, 2e-4, 1e-3]; xl = ["0.5", "1", "2", "10"]
+    for ax in (a1, a2):
+        bu.floating_axes(ax); bu.soft_grid(ax, "both")
+        ax.set_xscale("log")
+        ax.set_xticks(xt); ax.set_xticklabels(xl)
+        ax.xaxis.set_minor_locator(plt.NullLocator())
+        ax.set_xlabel("budget $\\varepsilon$ ($\\times 10^{-4}$)")
 
-    lab = {HEAD: "SCOUT-FL (soft)", ABL: "SCOUT-FL$^{\\dagger}$ (hard gate)"}
     e_all = sorted({r[0] for r in rows})
     a1.plot(e_all, e_all, color=bu.INK, lw=1.0, ls="--", zorder=3,
             label="realised = budget")
@@ -992,22 +998,27 @@ def fig_eps_sweep():
         pts = sorted(r for r in rows if r[1] == m)
         if not pts: continue
         e = [p[0] for p in pts]; hl = m == HEAD
-        a1.plot(e, [p[4] for p in pts], f"-{mk}", color=c(m), lw=2.0 if hl else 1.4,
-                ms=4.5 if hl else 4, mec="white", mew=0.6, zorder=6 if hl else 5,
-                label=lab[m])
+        lbl = "SCOUT-FL (soft)" if hl else "SCOUT-FL$^{\\dagger}$ (hard)"
+        a1.plot(e, [p[4] for p in pts], f"-{mk}", color=c(m), lw=1.8 if hl else 1.2,
+                ms=4 if hl else 3.5, mec="white", mew=0.5, zorder=6 if hl else 5,
+                label=lbl)
         a2.errorbar(e, [p[2] for p in pts], yerr=[p[3] for p in pts], fmt=f"-{mk}",
-                    color=c(m), lw=2.0 if hl else 1.4, ms=4.5 if hl else 4,
-                    mec="white", mew=0.6, capsize=2, elinewidth=1.0,
-                    zorder=6 if hl else 5, label=lab[m])
-    a1.set_xscale("log"); a1.set_yscale("log")
-    a1.set_ylabel("realised MSE (time avg.)")
-    a1.legend(loc="upper left", fontsize=8, handlelength=1.5, handletextpad=0.4,
-              labelspacing=0.3)
-    bu.panel_tag(a1, "(a) the soft loop spends the whole budget", y=1.03)
-    a2.set_xlabel("aggregation-MSE budget  $\\varepsilon$  (log)")
+                    color=c(m), lw=1.8 if hl else 1.2, ms=4 if hl else 3.5,
+                    mec="white", mew=0.5, capsize=1.5, elinewidth=0.9,
+                    zorder=6 if hl else 5)
+    a1.set_yscale("log")
+    yt = [5e-5, 1e-4, 2e-4, 1e-3]
+    a1.set_yticks(yt); a1.set_yticklabels(["0.5", "1", "2", "10"])
+    a1.yaxis.set_minor_locator(plt.NullLocator())
+    a1.set_ylabel("realised MSE ($\\times 10^{-4}$)")
+    bu.panel_tag(a1, "(a)", y=1.02)
     a2.set_ylabel("final accuracy (%)")
-    bu.panel_tag(a2, "(b) accuracy across the budget range", y=1.03)
-    fig.tight_layout(pad=0.4, h_pad=1.6)
+    bu.panel_tag(a2, "(b)", y=1.02)
+
+    fig.legend(loc="lower center", ncol=3, fontsize=8, frameon=False,
+               bbox_to_anchor=(0.5, -0.015), handlelength=1.1, handletextpad=0.3,
+               columnspacing=0.7)
+    fig.tight_layout(rect=(0, 0.10, 1, 1), pad=0.35, w_pad=1.2)
     bu.save(fig, os.path.join(FIG, "fig13_epsgate"))
 
     os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
