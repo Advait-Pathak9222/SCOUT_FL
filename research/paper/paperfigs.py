@@ -893,15 +893,15 @@ def _load_tccn_rows(tag, method):
     return out
 
 
-def fig_adaptation():
-    """Paper Fig. 12 (TCCN E-R1): the dual price reacting to a mid-run budget cut.
-    Side-by-side panels: (a) mu_t of SCOUT-FL, (b) realised aggregation MSE of both
-    variants against the stepped budget, with explicit tick labels on every axis.
-    Requires runs_tccn/adapt_eps (scripts/tccn_experiments.sh)."""
+def fig_adapt_sweep():
+    """Paper Fig. 12 (TCCN E-R1 + E-R2 combined): 2x2 panels sharing one legend.
+    (a) dual price and (b) realised MSE under the mid-run budget cut.
+    (c) realised MSE and (d) accuracy across the static budget sweep."""
+    import glob as _glob
     runs_v2 = _load_tccn_rows("adapt_eps", HEAD)
     runs_hg = _load_tccn_rows("adapt_eps", ABL)
     if not runs_v2:
-        print("  (fig_adaptation: runs_tccn/adapt_eps not found - skipped)"); return
+        print("  (fig_adapt_sweep: runs_tccn/adapt_eps not found - skipped)"); return
 
     def stack(runs, key):
         n = min(len(r) for r in runs)
@@ -912,64 +912,10 @@ def fig_adaptation():
     x = np.arange(mu.shape[1])
     t_cut = int(np.argmax(np.diff(eps) != 0) + 1) if np.any(np.diff(eps) != 0) else None
 
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.5, 2.05))
-    for ax in (a1, a2):
-        bu.floating_axes(ax); bu.soft_grid(ax, "both")
-        ax.set_xticks([0, 75, 150]); ax.set_xlabel("round")
-        if t_cut:
-            ax.axvline(t_cut, color="#c0392b", lw=0.9, ls=(0, (2, 2)), zorder=2)
-
-    a1.plot(x, mu.mean(0), color=c(HEAD), lw=1.8, zorder=6)
-    a1.fill_between(x, mu.mean(0) - mu.std(0, ddof=1), mu.mean(0) + mu.std(0, ddof=1),
-                    color=c(HEAD), alpha=.18, lw=0, zorder=4)
-    a1.set_ylabel("dual price  $\\mu_t$")
-    bu.panel_tag(a1, "(a)", y=1.02)
-
-    a2.plot(x, mse_v2.mean(0), color=c(HEAD), lw=1.8, zorder=6, label="SCOUT-FL")
-    if runs_hg:
-        mse_hg = stack(runs_hg, "agg_mse")
-        a2.plot(x[:mse_hg.shape[1]], mse_hg.mean(0), color=c(ABL), lw=1.2, zorder=5,
-                label="SCOUT-FL$^{\\dagger}$ (hard gate)")
-    a2.plot(x, eps, color=bu.INK, lw=1.1, ls="--", zorder=7, label="budget $\\varepsilon(t)$")
-    a2.set_yscale("log")
-    ticks = [1.5e-4, 2e-4, 5e-4, 1e-3]
-    a2.set_yticks(ticks); a2.set_yticklabels(["1.5", "2", "5", "10"])
-    a2.yaxis.set_minor_locator(plt.NullLocator())
-    a2.set_ylabel("agg. MSE  ($\\times 10^{-4}$)")
-    bu.panel_tag(a2, "(b)", y=1.02)
-
-    fig.legend(loc="lower center", ncol=3, fontsize=8, frameon=False,
-               bbox_to_anchor=(0.5, -0.015), handlelength=1.1, handletextpad=0.3,
-               columnspacing=0.7)
-    fig.tight_layout(rect=(0, 0.10, 1, 1), pad=0.35, w_pad=1.2)
-    bu.save(fig, os.path.join(FIG, "fig12_adaptation"))
-
-    os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
-    post = slice(t_cut, None) if t_cut else slice(None)
-    json.dump({"t_cut": t_cut, "seeds": len(runs_v2),
-               "mu_peak": float(mu.mean(0).max()),
-               "mse_pre_mean": float(mse_v2[:, :t_cut].mean()) if t_cut else None,
-               "mse_post_mean": float(mse_v2[:, post].mean()),
-               "eps_post": float(eps[-1]),
-               "post_rounds_within_budget_frac":
-                   float((mse_v2[:, post] <= eps[-1]).mean())},
-              open(os.path.join(FIG, "stats", "adaptation.json"), "w"), indent=1)
-    print("  fig_adaptation: stats/adaptation.json written")
-
-
-# ══════════════════════════════════ TCCN FIG 13 — budget sweep, soft vs hard (E-R2)
-def fig_eps_sweep():
-    """Paper Fig. 13 (TCCN E-R2): budget sweep, side-by-side panels with explicit
-    tick labels. (a) realised time-averaged MSE against the budget with the identity
-    line. (b) final accuracy. Requires runs_tccn/eps_*."""
-    import glob as _glob
-    dirs = sorted(_glob.glob(os.path.join(ROOT, "runs_tccn", "eps_*")))
-    if not dirs:
-        print("  (fig_eps_sweep: runs_tccn/eps_* not found - skipped)"); return
     rows = []
-    for d_ in dirs:
+    for d_ in sorted(_glob.glob(os.path.join(ROOT, "runs_tccn", "eps_*"))):
         try:
-            eps = float(os.path.basename(d_)[4:])
+            e = float(os.path.basename(d_)[4:])
         except ValueError:
             continue
         for m in (HEAD, ABL):
@@ -977,52 +923,84 @@ def fig_eps_sweep():
             if not runs: continue
             accs = [r[-1]["test_acc"] for r in runs]
             mses = [np.mean([rr["agg_mse"] for rr in r]) for r in runs]
-            rows.append((eps, m, np.mean(accs) * 100, np.std(accs, ddof=1) * 100,
+            rows.append((e, m, np.mean(accs) * 100, np.std(accs, ddof=1) * 100,
                          np.mean(mses)))
-    if not rows:
-        print("  (fig_eps_sweep: no complete runs yet - skipped)"); return
 
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(3.5, 2.05))
-    xt = [5e-5, 1e-4, 2e-4, 1e-3]; xl = ["0.5", "1", "2", "10"]
+    fig, axes = plt.subplots(2, 2, figsize=(3.5, 3.9))
+    (a1, a2), (a3, a4) = axes
+    for ax in axes.ravel(): bu.floating_axes(ax); bu.soft_grid(ax, "both")
+
+    # (a)/(b): adaptation over rounds
     for ax in (a1, a2):
-        bu.floating_axes(ax); bu.soft_grid(ax, "both")
-        ax.set_xscale("log")
-        ax.set_xticks(xt); ax.set_xticklabels(xl)
+        ax.set_xticks([0, 75, 150]); ax.set_xlabel("round")
+        if t_cut:
+            ax.axvline(t_cut, color="#c0392b", lw=0.9, ls=(0, (2, 2)), zorder=2)
+    a1.plot(x, mu.mean(0), color=c(HEAD), lw=1.8, zorder=6)
+    a1.fill_between(x, mu.mean(0) - mu.std(0, ddof=1), mu.mean(0) + mu.std(0, ddof=1),
+                    color=c(HEAD), alpha=.18, lw=0, zorder=4)
+    a1.set_ylabel("dual price  $\\mu_t$")
+    a2.plot(x, mse_v2.mean(0), color=c(HEAD), lw=1.8, zorder=6, label="SCOUT-FL (soft)")
+    if runs_hg:
+        mse_hg = stack(runs_hg, "agg_mse")
+        a2.plot(x[:mse_hg.shape[1]], mse_hg.mean(0), color=c(ABL), lw=1.2, zorder=5,
+                label="SCOUT-FL$^{\\dagger}$ (hard)")
+    a2.plot(x, eps, color=bu.INK, lw=1.1, ls="--", zorder=7, label="budget $\\varepsilon$")
+    a2.set_yscale("log")
+    a2.set_yticks([1.5e-4, 2e-4, 5e-4, 1e-3])
+    a2.set_yticklabels(["1.5", "2", "5", "10"])
+    a2.yaxis.set_minor_locator(plt.NullLocator())
+    a2.set_ylabel("agg. MSE ($\\times 10^{-4}$)")
+
+    # (c)/(d): budget sweep
+    xt = [5e-5, 1e-4, 2e-4, 1e-3]; xl = ["0.5", "1", "2", "10"]
+    for ax in (a3, a4):
+        ax.set_xscale("log"); ax.set_xticks(xt); ax.set_xticklabels(xl)
         ax.xaxis.set_minor_locator(plt.NullLocator())
         ax.set_xlabel("budget $\\varepsilon$ ($\\times 10^{-4}$)")
+    if rows:
+        e_all = sorted({r[0] for r in rows})
+        a3.plot(e_all, e_all, color=bu.INK, lw=1.0, ls="--", zorder=3)
+        for m, mk in ((HEAD, "o"), (ABL, "s")):
+            pts = sorted(r for r in rows if r[1] == m)
+            if not pts: continue
+            e = [q[0] for q in pts]; hl = m == HEAD
+            a3.plot(e, [q[4] for q in pts], f"-{mk}", color=c(m), lw=1.8 if hl else 1.2,
+                    ms=4 if hl else 3.5, mec="white", mew=0.5, zorder=6 if hl else 5)
+            a4.errorbar(e, [q[2] for q in pts], yerr=[q[3] for q in pts], fmt=f"-{mk}",
+                        color=c(m), lw=1.8 if hl else 1.2, ms=4 if hl else 3.5,
+                        mec="white", mew=0.5, capsize=1.5, elinewidth=0.9,
+                        zorder=6 if hl else 5)
+        a3.set_yscale("log")
+        a3.set_yticks(xt); a3.set_yticklabels(xl)
+        a3.yaxis.set_minor_locator(plt.NullLocator())
+        a3.set_ylabel("realised MSE ($\\times 10^{-4}$)")
+        a4.set_ylabel("final accuracy (%)")
 
-    e_all = sorted({r[0] for r in rows})
-    a1.plot(e_all, e_all, color=bu.INK, lw=1.0, ls="--", zorder=3,
-            label="realised = budget")
-    for m, mk in ((HEAD, "o"), (ABL, "s")):
-        pts = sorted(r for r in rows if r[1] == m)
-        if not pts: continue
-        e = [p[0] for p in pts]; hl = m == HEAD
-        lbl = "SCOUT-FL (soft)" if hl else "SCOUT-FL$^{\\dagger}$ (hard)"
-        a1.plot(e, [p[4] for p in pts], f"-{mk}", color=c(m), lw=1.8 if hl else 1.2,
-                ms=4 if hl else 3.5, mec="white", mew=0.5, zorder=6 if hl else 5,
-                label=lbl)
-        a2.errorbar(e, [p[2] for p in pts], yerr=[p[3] for p in pts], fmt=f"-{mk}",
-                    color=c(m), lw=1.8 if hl else 1.2, ms=4 if hl else 3.5,
-                    mec="white", mew=0.5, capsize=1.5, elinewidth=0.9,
-                    zorder=6 if hl else 5)
-    a1.set_yscale("log")
-    yt = [5e-5, 1e-4, 2e-4, 1e-3]
-    a1.set_yticks(yt); a1.set_yticklabels(["0.5", "1", "2", "10"])
-    a1.yaxis.set_minor_locator(plt.NullLocator())
-    a1.set_ylabel("realised MSE ($\\times 10^{-4}$)")
-    bu.panel_tag(a1, "(a)", y=1.02)
-    a2.set_ylabel("final accuracy (%)")
-    bu.panel_tag(a2, "(b)", y=1.02)
-
-    fig.legend(loc="lower center", ncol=3, fontsize=8, frameon=False,
-               bbox_to_anchor=(0.5, -0.015), handlelength=1.1, handletextpad=0.3,
-               columnspacing=0.7)
-    fig.tight_layout(rect=(0, 0.10, 1, 1), pad=0.35, w_pad=1.2)
-    bu.save(fig, os.path.join(FIG, "fig13_epsgate"))
+    for ax, tag in zip(axes.ravel(), ["(a)", "(b)", "(c)", "(d)"]):
+        bu.panel_tag(ax, tag, y=1.02)
+    fig.legend(*a2.get_legend_handles_labels(), loc="lower center", ncol=3,
+               fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.008),
+               handlelength=1.1, handletextpad=0.3, columnspacing=0.7)
+    fig.tight_layout(rect=(0, 0.055, 1, 1), pad=0.35, w_pad=1.2, h_pad=1.3)
+    bu.save(fig, os.path.join(FIG, "fig12_adapt_sweep"))
 
     os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
-    json.dump([{"eps": r[0], "method": r[1], "acc_mean": r[2], "acc_std": r[3],
-                "mse_mean": r[4]} for r in rows],
-              open(os.path.join(FIG, "stats", "eps_sweep.json"), "w"), indent=1)
-    print("  fig_eps_sweep: stats/eps_sweep.json written")
+    post = slice(t_cut, None) if t_cut else slice(None)
+    json.dump({"t_cut": t_cut, "seeds": len(runs_v2),
+               "mu_peak": float(mu.mean(0).max()),
+               "mse_post_mean": float(mse_v2[:, post].mean()),
+               "eps_post": float(eps[-1]),
+               "sweep": [{"eps": r[0], "method": r[1], "acc_mean": r[2],
+                          "acc_std": r[3], "mse_mean": r[4]} for r in rows]},
+              open(os.path.join(FIG, "stats", "adapt_sweep.json"), "w"), indent=1)
+    print("  fig_adapt_sweep: stats/adapt_sweep.json written")
+
+
+def fig_adaptation():
+    """Kept for the run script: E-R1 and E-R2 now render as one combined figure."""
+    fig_adapt_sweep()
+
+
+def fig_eps_sweep():
+    """Merged into fig_adapt_sweep (see fig_adaptation)."""
+    pass
