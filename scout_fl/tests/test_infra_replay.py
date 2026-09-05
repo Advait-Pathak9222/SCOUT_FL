@@ -17,6 +17,11 @@ _FILES = sorted(glob.glob(f"runs/campaign/{_POINT}/*__seed0.json"))
 
 @pytest.mark.skipif(not _FILES, reason="no campaign artifacts present")
 def test_replay_reconstructs_round0_logdet():
+    # The skipif above covers pytest. This project's own convention is to import and call
+    # the test functions directly, which does not see markers, and a fresh clone has no
+    # runs/ because it is generated. Guard here so both runners agree.
+    if not _FILES:
+        return
     cfg = replay.config_for_point(_POINT, _CFG)
     checked = 0
     for f in _FILES[:6]:
