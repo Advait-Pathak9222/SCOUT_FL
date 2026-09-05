@@ -54,28 +54,28 @@ cat <<'PLAN'
 ==============================================================
  stage  what                                    runs    what it buys
  -----  --------------------------------------  ------  --------------------------------
-   1    main operating point, 13 methods          65    Table II, frontier, convergence,
+   1    main operating point, 14 methods          70    Table II, frontier, convergence,
                                                         overhead, constraint ablation
-   2    OFAT campaign, 25 points, 13 methods    1625    Pareto share, paired deltas,
+   2    OFAT campaign, 25 points, 14 methods    1750    Pareto share, paired deltas,
                                                         threshold sweep, cross dataset
    3    trade off weight lambda, 7 values          35    the lambda frontier figure
    4    aggregation budget, 5 static + 1 cut      60    adaptation and budget figures,
                                                         grid taken from stage 1
-   5    interference floor, 6 levels              180    the claim that the dual price
+   5    interference floor, 6 levels              210    the claim that the dual price
                                                         absorbs interference unestimated
-   6    bandwidth, 5 values                       150    the closed form optimal bandwidth
-   7    channel coherence, 4 values               120    whether an adaptive price earns
+   6    bandwidth, 5 values                      175    the closed form optimal bandwidth
+   7    channel coherence, 4 values              140    whether an adaptive price earns
                                                         its place on a moving channel
-   8    online regret, CUCB against the oracle      6    the sublinear regret certificate
+   8    online regret, CUCB against the oracle      5    the sublinear regret certificate
    9    theory validation, no new training          0    convergence and feasibility checks
   10    baseline collapse analysis, no training     0    which baselines reduce to channel
                                                         quality selection
  -----  --------------------------------------  ------
- total                                           2241
+ total                                           2445
 ==============================================================
- cost   about 1.5 to 2.5 min per run on one worker, so roughly 56 to 93 hours
-        single threaded, or 7 to 12 hours at SHARDS=8.
-        Stage 2 is 73 percent of it. Stages 1, 3, 4, 8, 9, 10 together are under 3 hours
+ cost   about 1.5 to 2.5 min per run on one worker, so roughly 61 to 102 hours
+        single threaded, or 8 to 13 hours at SHARDS=8.
+        Stage 2 is 72 percent of it. Stages 1, 3, 4, 8, 9, 10 together are under 3 hours
         and produce every headline number, so run those first if time is short.
 ==============================================================
 PLAN
@@ -84,14 +84,14 @@ fi
 
 # --------------------------------------------------------------- 1. main point
 if run_stage 1; then
-banner 1 "main operating point, 13 methods x 5 seeds"
+banner 1 "main operating point, 14 methods x 5 seeds"
 python -m scout_fl.experiments.run_fl_synthetic --config "$CFG" \
     --override "fl.device=$DEVICE" "experiment=tccn_main" "seeds=$SEEDS" "selection.methods=$POOL"
 fi
 
 # --------------------------------------------------------------- 2. OFAT campaign
 if run_stage 2; then
-banner 2 "OFAT campaign, 25 points x 13 methods x 5 seeds, $SHARDS shards"
+banner 2 "OFAT campaign, 25 points x 14 methods x 5 seeds, $SHARDS shards"
 mkdir -p logs
 pids=()
 for sh in "A_datasets" "B_wireless_snr" "A_learning_noniid A_learning_partition" \
@@ -151,19 +151,19 @@ fi
 
 # --------------------------------------------------------------- 5-7. physical layer sweeps
 if run_stage 5; then
-banner 5 "interference floor, 6 levels x 6 methods x 5 seeds"
+banner 5 "interference floor, 6 levels x 7 methods x 5 seeds"
 python -m scout_fl.experiments.run_campaign --config "$CFG" --tag tccn_campaign \
     --sweeps B_wireless_interference \
     --override "fl.device=$DEVICE" "seeds=$SEEDS" "selection.methods=$CORE"
 fi
 if run_stage 6; then
-banner 6 "bandwidth, 5 values x 6 methods x 5 seeds"
+banner 6 "bandwidth, 5 values x 7 methods x 5 seeds"
 python -m scout_fl.experiments.run_campaign --config "$CFG" --tag tccn_campaign \
     --sweeps B_wireless_bandwidth \
     --override "fl.device=$DEVICE" "seeds=$SEEDS" "selection.methods=$CORE"
 fi
 if run_stage 7; then
-banner 7 "channel coherence, 4 values x 6 methods x 5 seeds"
+banner 7 "channel coherence, 4 values x 7 methods x 5 seeds"
 python -m scout_fl.experiments.run_campaign --config "$CFG" --tag tccn_campaign \
     --sweeps B_wireless_coherence \
     --override "fl.device=$DEVICE" "seeds=$SEEDS" "selection.methods=$CORE"
@@ -172,17 +172,17 @@ fi
 # --------------------------------------------------------------- 8. online regret
 if run_stage 8; then
 banner 8 "online regret, CUCB against the offline oracle"
-python -m scout_fl.experiments.run_regret --config "$CFG" \
-    --override "fl.device=$DEVICE" "seeds=$SEEDS" || true
+python -m scout_fl.experiments.run_regret --config "$CFG" --seeds 0 1 2 3 4 \
+    --rounds 300 --out runs --override "fl.device=$DEVICE" || true
 fi
 
 # --------------------------------------------------------------- 9-10. analysis, no training
 if run_stage 9; then
 banner 9 "theory validation and collection"
-python -m scout_fl.analysis.collect || true
-python -m scout_fl.analysis.convergence runs/tccn_main || true
-python -m scout_fl.analysis.feasibility runs/tccn_main || true
-python -m scout_fl.analysis.regret || true
+python -m scout_fl.analysis.collect runs || true
+python -m scout_fl.analysis.convergence runs --tag tccn_main || true
+python -m scout_fl.analysis.feasibility runs --tag tccn_main --method scout_v2 || true
+python -m scout_fl.analysis.regret runs --tag regret || true
 fi
 if run_stage 10; then
 banner 10 "baseline collapse analysis"
