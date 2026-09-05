@@ -25,6 +25,10 @@ cd "$(dirname "$0")/.."
 
 DEVICE="${DEVICE:-auto}"
 SHARDS="${SHARDS:-4}"
+# Shards share one card, so each is capped at its slice. The cap bounds the allocator and
+# also scales how many clients the probe differentiates at once, which is what would
+# otherwise oversubscribe the device when every shard sizes itself as if it were alone.
+SHARE=$(python -c "print(round(0.92/max($SHARDS,1), 4))")
 CFG=scout_fl/configs/campaign_tccn.yaml
 SEEDS='[0,1,2,3,4]'
 POOL='[scout_v2,scout_greedy,collabsensefed,sensing_native,asaad,fixed_weighted,fed_iscc,ota_fl_iscc,iscc_air_feel,fedavg_iscc,fedsgd_iscc,crb_only,sensing_only,comm_only]'
@@ -46,6 +50,12 @@ run_stage() {
     if [ -n "$STAGE" ]; then [ "$STAGE" = "$1" ]; else [ "$1" -ge "$FROM" ]; fi
 }
 banner() { echo; echo "=============================================================="; echo "[stage $1] $2"; echo "=============================================================="; }
+# Throughput. The probe is 69 percent of a round and was 100 separate forward and backward
+# passes; it is now one vectorised call over device resident data. Measured 1.7x on the
+# probe and 1.66x per round on Apple MPS, where the probe is now compute bound. On CUDA the
+# saving is larger, because what the batching removes is launch overhead. Set
+# fl.deterministic=false to add the cuDNN autotuner when a sweep does not need to be exactly
+# reproducible.
 
 if [ "$DRY" -eq 1 ]; then
 cat <<'PLAN'
@@ -73,10 +83,20 @@ cat <<'PLAN'
  -----  --------------------------------------  ------
  total                                           2445
 ==============================================================
- cost   about 1.5 to 2.5 min per run on one worker, so roughly 61 to 102 hours
-        single threaded, or 8 to 13 hours at SHARDS=8.
-        Stage 2 is 72 percent of it. Stages 1, 3, 4, 8, 9, 10 together are under 3 hours
-        and produce every headline number, so run those first if time is short.
+ cost   Measured on Apple MPS, 234 ms per round with the fast path against 389 ms
+        without it, so about 35 s per 150 round run. That is roughly 24 hours on one
+        worker and 3 hours at SHARDS=8. A CUDA card should beat both, since most of
+        what the batching removes is launch overhead.
+        Stage 2 is 72 percent of it. Stages 1, 3, 4, 8, 9, 10 together are around an
+        hour and produce every headline number, so run those first if time is short.
+==============================================================
+ speed  fl.fast_path holds the training subsample on the device and differentiates
+        every client's probe in one vectorised call. It is exact, and the tests in
+        tests/test_fastpath.py check the gradients and the SGD updates against the
+        reference path. Turn it off with fl.fast_path=false if you need the old path.
+        fl.probe_chunk=auto sizes the probe from free memory and this process's share.
+        fl.deterministic=false adds the cuDNN autotuner for sweeps that need not be
+        exactly reproducible.
 ==============================================================
 PLAN
 exit 0
@@ -100,7 +120,7 @@ for sh in "A_datasets" "B_wireless_snr" "A_learning_noniid A_learning_partition"
     echo "  [shard] $sh -> $log"
     python -m scout_fl.experiments.run_campaign --config "$CFG" --tag tccn_campaign \
         --sweeps $sh --override "fl.device=$DEVICE" "seeds=$SEEDS" "selection.methods=$POOL" \
-        >"$log" 2>&1 &
+        "fl.cuda_memory_fraction=$SHARE" >"$log" 2>&1 &
     pids+=($!)
 done
 fail=0; for p in "${pids[@]}"; do wait "$p" || fail=1; done

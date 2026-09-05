@@ -26,6 +26,8 @@ import yaml
 from scout_fl.experiments.run_synthetic import build_scenario
 from scout_fl.fl.aggregation import aggregate
 from scout_fl.fl.client import local_train, probe_loss_and_embedding
+from scout_fl.fl.fastpath import (auto_chunk, batched_probe, evaluate_fast,
+                                  local_train_fast, store_from_datasets)
 from scout_fl.fl.datasets import build_client_datasets, load_fl_dataset
 from scout_fl.fl.models import build_model, num_params
 from scout_fl.analysis.pareto import hypervolume, normalize_objectives, pareto_front, per_method_volume
@@ -51,7 +53,7 @@ from scout_fl.sim.channel import comm_channel_gains
 from scout_fl.sim.energy_latency import round_energy_latency
 from scout_fl.sim.nonstationary import WirelessISACNonstationarity
 from scout_fl.utils.config import load_config, to_plain
-from scout_fl.utils.device import describe_device, resolve_device
+from scout_fl.utils.device import describe_device, release, resolve_device, tune_backend
 from scout_fl.utils.logging_utils import RunLogger
 from scout_fl.utils.runstore import (load_unit, participation_from_rows, save_unit,
                                       unit_path)
@@ -220,6 +222,40 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     full = list(range(K))
     ns_model = WirelessISACNonstationarity(cfg, scn, g, base_seed)
 
+    # Fast path. The probe is 69 percent of a round at the campaign operating point, and it
+    # is 100 separate forward and backward passes on one mini batch each, so it is bound by
+    # launch and transfer overhead rather than by arithmetic. Holding the data on the device
+    # and differentiating every client in one vectorised call removes both. Falls back to the
+    # original path whenever the data will not fit or torch.func is unavailable.
+    _fl = cfg.get("fl", {})
+    use_fast = bool(_fl.get("fast_path", False))
+    _chunk_cfg = _fl.get("probe_chunk", 25)
+    _cap = _fl.get("max_device_data_gb")
+    store = None
+    if use_fast:
+        store = store_from_datasets(client_datasets, device,
+                                    None if _cap is None else float(_cap) * 1e9)
+        if store is None:
+            print("[fast] the training subsample does not fit the device cap, "
+                  "staying on the host-resident path", flush=True)
+    probe_chunk = 25
+    if store is not None:
+        _share = float(_fl.get("cuda_memory_fraction") or 1.0)
+        probe_chunk = (auto_chunk(store, int(cfg.fl.batch_size), num_params(server.model),
+                                  share=_share)
+                       if str(_chunk_cfg).lower() == "auto" else int(_chunk_cfg))
+        print(f"[fast] device store {store.nbytes()/1e6:.0f} MB, "
+              f"probe chunk {probe_chunk} of {store.num_clients} clients", flush=True)
+    x_test_d, y_test_d = x_test, y_test
+    if store is not None:
+        try:
+            x_test_d, y_test_d = x_test.to(device), y_test.to(device)
+        except (RuntimeError, MemoryError):
+            x_test_d, y_test_d = x_test, y_test
+    torch_gen = torch.Generator(device=device) if store is not None else None
+    if torch_gen is not None:
+        torch_gen.manual_seed(int(base_seed) + 4242)
+
     aircomp_on = bool(cfg.aircomp.enabled)
     # Physical units (genuine link budget) override the normalized P/sigma2/model_bits/cpu_cycles
     # so energy is in Joules, latency in seconds, and P*g/sigma2 is a true SNR (see sim/link_budget.py).
@@ -301,10 +337,6 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         fade_per_round = False        # no separable large-scale term available
     fade_rng = np.random.default_rng(int(base_seed) + 7717)
     _g_block = np.asarray(g, dtype=float)
-    # Per-entry power pi of the model update. It sets how far channel inversion can push the
-    # denoising factor before the transmit-power budget binds, and it is the scale the AirComp
-    # noise must be referred to. Measured from the previous round's updates (the server knows
-    # them); the first round uses the configured seed value.
     # Per-entry power pi of the transmitted update. Clients normalise to unit power before
     # transmission (standard AirComp practice), so pi cancels out of the aggregation-error
     # CONSTRAINT and epsilon keeps its meaning as a bound on the relative error. pi re-enters
@@ -337,16 +369,23 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         g_flat = server.global_flat()
         # --- probe every client on the current global model (loss + grad embedding) ---
         tic = time.perf_counter()
-        losses = np.zeros(K)
-        embs = []
-        for k in range(K):
+        if store is not None:
             server.set_global(g_flat)
-            lk, ek = probe_loss_and_embedding(server.model, client_datasets[k],
-                                              batch_size=cfg.fl.batch_size, device=device,
-                                              max_batches=int(cfg.fl.get("probe_batches", 1)))
-            losses[k] = lk
-            embs.append(ek)
-        embs = np.stack(embs)
+            losses, embs = batched_probe(server.model, store,
+                                         batch_size=int(cfg.fl.batch_size),
+                                         chunk=probe_chunk, generator=torch_gen)
+            losses = np.asarray(losses, dtype=float)
+        else:
+            losses = np.zeros(K)
+            embs = []
+            for k in range(K):
+                server.set_global(g_flat)
+                lk, ek = probe_loss_and_embedding(server.model, client_datasets[k],
+                                                  batch_size=cfg.fl.batch_size, device=device,
+                                                  max_batches=int(cfg.fl.get("probe_batches", 1)))
+                losses[k] = lk
+                embs.append(ek)
+            embs = np.stack(embs)
         if ns_model.enabled:
             losses, embs, probe_diag = ns_model.adjust_probes(t, losses, embs)
             ns_diag.update(probe_diag)
@@ -453,9 +492,16 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         updates, counts, train_losses = [], [], []
         for k in selected:
             server.set_global(g_flat)
-            out = local_train(server.model, client_datasets[k], epochs=int(cfg.fl.local_epochs),
-                              lr=float(cfg.fl.lr), batch_size=int(cfg.fl.batch_size),
-                              optimizer=cfg.fl.optimizer, device=device, max_steps=max_steps)
+            if store is not None:
+                out = local_train_fast(server.model, store, int(k),
+                                       epochs=int(cfg.fl.local_epochs), lr=float(cfg.fl.lr),
+                                       batch_size=int(cfg.fl.batch_size),
+                                       optimizer=cfg.fl.optimizer, max_steps=max_steps,
+                                       generator=torch_gen)
+            else:
+                out = local_train(server.model, client_datasets[k], epochs=int(cfg.fl.local_epochs),
+                                  lr=float(cfg.fl.lr), batch_size=int(cfg.fl.batch_size),
+                                  optimizer=cfg.fl.optimizer, device=device, max_steps=max_steps)
             updates.append(out["update"]); counts.append(out["num_samples"]); train_losses.append(out["loss"])
         train_time = time.perf_counter() - tic
 
@@ -484,7 +530,10 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         agg_time = time.perf_counter() - tic
 
         # --- evaluate + ISAC metrics ---
-        test_loss, test_acc = server.evaluate(x_test, y_test)
+        if store is not None:
+            test_loss, test_acc = evaluate_fast(server.model, x_test_d, y_test_d)
+        else:
+            test_loss, test_acc = server.evaluate(x_test, y_test)
 
         # --- twin: learn feature->realized-loss-drop, refresh trust (surrogate validity) ---
         if use_twin:
@@ -603,6 +652,7 @@ def run_unit(method, cfg, scn, g, client_datasets, x_te, y_te, input_shape, num_
             "dataset": cfg.fl.dataset, "model": cfg.fl.model}
     rows, part = run_one(method, cfg, scn, g, client_datasets, x_te, y_te,
                          input_shape, num_classes, base_seed=seed, out_path=path, meta=meta)
+    release(resolve_device(cfg.fl.get("device", "auto")))
     return rows, part, _objectives(rows, part, scn.K)
 
 
@@ -706,6 +756,9 @@ def main() -> None:
         _apply_quick(cfg)
     device = resolve_device(cfg.fl.get("device", "auto"))
     print(f"[device] requested={cfg.fl.get('device', 'auto')} -> using {device} ({describe_device(device)})")
+    _tuned = tune_backend(device, deterministic=bool(cfg.fl.get("deterministic", True)),
+                          memory_fraction=cfg.fl.get("cuda_memory_fraction"))
+    print(f"[device] {_tuned}")
     seeds = [int(s) for s in (cfg.get("seeds") or [int(cfg.get("seed", 0))])]
     if args.quick:
         seeds = seeds[:2]

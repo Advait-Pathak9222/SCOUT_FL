@@ -31,7 +31,7 @@ from scout_fl.experiments.run_fl_synthetic import (_apply_quick, aggregate_resul
                                                     run_bakeoff)
 from scout_fl.fl.datasets import load_fl_dataset
 from scout_fl.utils.config import load_config, to_plain
-from scout_fl.utils.device import describe_device, resolve_device
+from scout_fl.utils.device import describe_device, resolve_device, tune_backend
 from scout_fl.utils.logging_utils import RunLogger
 
 # Each sweep: a Test label, the parameter that labels the x-axis, and the list of
@@ -211,8 +211,10 @@ def main():
     if args.dry_run:
         _dry_run(sweeps, args.config, args.override, args.quick)
         return
-    device = resolve_device(load_config(args.config, args.override).fl.get("device", "auto"))
+    _cfg0 = load_config(args.config, args.override)
+    device = resolve_device(_cfg0.fl.get("device", "auto"))
     print(f"[device] using {device} ({describe_device(device)})")
+    print(f"[device] {tune_backend(device, deterministic=bool(_cfg0.fl.get('deterministic', True)), memory_fraction=_cfg0.fl.get('cuda_memory_fraction'))}")
     run_campaign(args.config, sweeps, args.override, args.quick, args.out, tag=args.tag)
 
 

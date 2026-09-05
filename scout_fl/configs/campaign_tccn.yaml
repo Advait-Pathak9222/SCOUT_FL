@@ -148,5 +148,15 @@ fl:
   subsample_train: 20000
   subsample_test: 4000
 
+  # Throughput. The probe is 69 percent of a round and is bound by launch and transfer
+  # overhead, so the data lives on the device and every client is differentiated in one
+  # vectorised call. See fl/fastpath.py.
+  fast_path: true
+  probe_chunk: 25                # clients differentiated together, bounds activation memory
+  max_device_data_gb: 2.0        # above this the run keeps the host resident path
+  deterministic: true            # false enables the cuDNN autotuner, at the cost of exact
+                                 # reproducibility; keep true for the runs that reach the paper
+  cuda_memory_fraction: null     # cap this process's share of the card when shards share a GPU
+
 logging:
   save_plots: true

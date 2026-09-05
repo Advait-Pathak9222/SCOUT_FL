@@ -453,3 +453,50 @@ code does not support. Ten findings, six of them affecting reported numbers.
   sweeps, the fading and normalisation statements, the lazy-evaluation correction.
 - Style pass. No colons, semicolons or dashes remain in prose, and the guarantees are
   stated as what is claimed rather than what is not.
+
+---
+
+## 2026-09-05 (later still) — making the runs fast enough to iterate on
+
+Profiling one round at the campaign operating point (N=100, budget 10, CIFAR-10,
+small CNN, Apple MPS) put **69 percent of the time in the probe**, 25 percent in
+local training and 6 percent in evaluation. The probe was 100 separate forward and
+backward passes on one mini batch each, so it was bound by launch and transfer
+overhead rather than by arithmetic. Each pass also rebuilt a DataLoader, copied a
+batch from host to device, and pulled a flat gradient back, which on CUDA is a
+synchronisation per client per round.
+
+### `scout_fl/fl/fastpath.py`
+- `ClientTensorStore` holds the training subsample on the device once and addresses
+  each client by an index tensor. No batch is copied again and no DataLoader is
+  built inside the round loop.
+- `probe_window` draws one fixed size window per client without replacement in a
+  single argsort and gather, replacing a Python loop over clients.
+- `batched_probe` differentiates every client in one `torch.func` call, chunked to
+  bound activation memory, halving the chunk and retrying on an allocation failure.
+  One device to host transfer replaces one hundred.
+- Clients holding fewer points than the batch are padded and masked, so the masked
+  mean reproduces the reference gradient exactly. Verified to 3.3e-7 relative on a
+  partition where 15 of 40 clients are shorter than one batch.
+- `local_train_fast` indexes a permutation instead of iterating a DataLoader and
+  accumulates the loss on the device, so a client costs one synchronisation.
+- `evaluate_fast` uses one synchronisation instead of two per batch.
+
+### Backend
+- `utils/device.tune_backend` enables TF32 on matmul and cuDNN, sets high matmul
+  precision, and turns on the cuDNN autotuner when `fl.deterministic` is false.
+  It can also cap this process's share of the card.
+- `utils/device.release` returns cached blocks between units so a long shard does
+  not fragment the allocator.
+- `auto_chunk` sizes the probe from free memory **and this process's share**, which
+  matters because a shard sees the whole card as free while seven others are running.
+  `scripts/schedule_experiments.sh` now passes `0.92/SHARDS` to every shard.
+
+### Result
+Per round on MPS, 389 ms to 234 ms, so **1.66x**, with the probe itself 1.79x and
+now compute bound rather than launch bound. The full schedule drops from about 40
+hours to 24 on one worker, or 3 hours at 8 shards. On CUDA the gain should be larger,
+because launch overhead is precisely what the batching removes.
+
+Falls back to the original path when the data will not fit the cap or `torch.func`
+is unavailable, and says so. 9 new tests, 132 pass.
