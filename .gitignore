@@ -17,6 +17,9 @@ runs_smoke/
 # --- transient stage/unit logs (regenerated every run) ---
 logs/
 
+# --- unattended driver output (regenerated; RUN_EVERYTHING.sh) ---
+RESULTS/
+
 # --- downloaded papers (license-gated; not redistributable) ---
 Papers/
 

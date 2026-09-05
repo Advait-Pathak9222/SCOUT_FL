@@ -152,3 +152,25 @@ def test_run_one_reproducible_selection():
     r1, _ = run_one("scout_greedy", cfg, scn, g, clients, x_te, y_te, (1, 8, 8), 2, base_seed=0)
     r2, _ = run_one("scout_greedy", cfg, scn, g, clients, x_te, y_te, (1, 8, 8), 2, base_seed=0)
     assert [r["selected"] for r in r1] == [r["selected"] for r in r2]
+
+
+def test_eps_schedule_accepts_every_safe_form_and_rejects_the_unsafe_one():
+    """YAML 1.1 reads "75:0.000123" as base sixty, so a bare number must be refused.
+
+    The list-of-pairs form is the one the drivers use, because nothing can mangle it.
+    """
+    from scout_fl.experiments.run_fl_synthetic import _parse_eps_schedule
+    want = {75: 1.5e-4}
+    assert _parse_eps_schedule([[75, 1.5e-4]]) == want
+    assert _parse_eps_schedule({75: 1.5e-4}) == want
+    assert _parse_eps_schedule("75:1.5e-4") == want
+    assert _parse_eps_schedule(None) == {}
+    assert _parse_eps_schedule("") == {}
+    assert _parse_eps_schedule("75:1e-4,120:5e-5") == {75: 1e-4, 120: 5e-5}
+    for bad in (4500.000123, 75):
+        try:
+            _parse_eps_schedule(bad)
+        except ValueError as exc:
+            assert "sexagesimal" in str(exc)
+        else:
+            raise AssertionError(f"a bare number {bad!r} must be refused")

@@ -200,6 +200,13 @@ def _parse_eps_schedule(spec):
         return out
     if isinstance(spec, dict):
         return {int(k): float(v) for k, v in spec.items()}
+    if isinstance(spec, (int, float)):
+        # YAML 1.1 reads "75:0.000123" as a base sixty number, 4500.000123, so an override
+        # written that way arrives here as a scalar and the schedule is silently lost.
+        raise ValueError(
+            f"mse_eps_schedule={spec!r} is a bare number, which means the override was "
+            "parsed as a sexagesimal value. Pass the schedule as a list of pairs, "
+            "for example constraints.mse_eps_schedule=[[75,1.5e-4]].")
     return {int(r): float(e) for r, e in spec}
 
 

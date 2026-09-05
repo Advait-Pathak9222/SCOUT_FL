@@ -165,7 +165,7 @@ CUT=$(echo "$EPS_GRID" | awk '{print $2}')      # mid-run cut to half the realis
 python -m scout_fl.experiments.run_fl_synthetic --config "$CFG" \
     --override "fl.device=$DEVICE" "runs_dir=runs_eps_tccn" "experiment=adapt_eps" \
     "seeds=$SEEDS" "selection.methods=[scout_v2,scout_greedy]" \
-    "constraints.mse_eps_schedule=75:$CUT"
+    "constraints.mse_eps_schedule=[[75,$CUT]]"
 python -m scout_fl.analysis.curvature --config "$CFG" --seeds 0 1 2 3 4 || true
 fi
 
