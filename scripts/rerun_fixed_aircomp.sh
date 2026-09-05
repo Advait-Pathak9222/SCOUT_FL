@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # =====================================================================
+# SUPERSEDED by scripts/schedule_experiments.sh, which covers everything this
+# script does and adds the interference, bandwidth and coherence sweeps, the
+# regret certificate and the theory validation. Use that one. This script is kept
+# because it reproduces the narrower AirComp-only re-run against campaign_main.yaml.
+#
 # Re-run the SCOUT-FL paper campaign with the FIXED AirComp MSE model.
 #
 #   bash scripts/rerun_fixed_aircomp.sh                 # full re-run (auto device)
