@@ -873,6 +873,7 @@ def main():
     fig_frontier(); fig_paired_delta(); fig_threshold()
     fig_convergence(); fig_runtime(); fig_rmse_crb(); fig_lambda()
     fig_gap_dist()
+    fig_power_sweep()          # Fig. 14 — transmit-power / SINR sweep (needs the campaign re-run)
     print("done ->", FIG)
 
 
@@ -1003,3 +1004,103 @@ def fig_adaptation():
 def fig_eps_sweep():
     """Merged into fig_adapt_sweep (see fig_adaptation)."""
     pass
+
+
+# ═══════════════════════════ FIG 14 — behaviour across the transmit-power / SINR range
+_POWER_PTS = [0, -10, -15, -20, -25, -30, -35]          # physical.tx_power_dbm, high -> low
+_POWER_METHODS = [HEAD, "collabsensefed", "sensing_native", SOTA, "crb_only", "sensing_only"]
+
+
+def _power_point_stats(tx_dbm, method, tail=25):
+    """(acc, crb_final, agg_mse, settled dual price) per seed at one transmit power.
+
+    agg_mse and the dual price are read from the per-round rows so the *settled*
+    behaviour is reported (mean over the last `tail` rounds), not the round-1 transient.
+    """
+    import glob as _glob
+    pat = os.path.join(ROOT, "runs", "campaign", f"B_wireless_snr={tx_dbm}",
+                       f"{method}__seed*.json")
+    acc, crb, mse, dual = [], [], [], []
+    for f in sorted(_glob.glob(pat)):
+        d = json.load(open(f))
+        if not d.get("complete"):
+            continue
+        o = d["objectives"]
+        acc.append(o["acc"] * 100.0)
+        crb.append(o.get("crb_final", o["crb"]))
+        rows = d.get("rounds", [])[-tail:]
+        if rows:
+            mse.append(float(np.mean([r["agg_mse"] for r in rows])))
+            dual.append(float(np.mean([r.get("dual_mse", 0.0) or 0.0 for r in rows])))
+    return map(np.asarray, (acc, crb, mse, dual))
+
+
+def fig_power_sweep(eps=1e-3):
+    """Paper Fig. 14: accuracy, CRB, realised aggregation MSE and the settled dual
+    price across the transmit-power sweep. Interference enters only through the
+    effective noise floor, so the abscissa doubles as a receive-SINR axis."""
+    series = {}
+    for m in _POWER_METHODS:
+        xs, A, C, M, D = [], [], [], [], []
+        for p in _POWER_PTS:
+            acc_v, crb_v, mse, du = _power_point_stats(p, m)
+            if not len(acc_v):
+                continue
+            xs.append(p); A.append((acc_v.mean(), acc_v.std()))
+            C.append(crb_v.mean()); M.append(mse.mean() if len(mse) else np.nan)
+            D.append(du.mean() if len(du) else np.nan)
+        if len(xs) >= 2:
+            series[m] = (np.array(xs), np.array(A), np.array(C), np.array(M), np.array(D))
+    if HEAD not in series:
+        print("  (fig_power_sweep: no transmit-power runs yet — skipped)"); return
+
+    fig, axes = plt.subplots(2, 2, figsize=(3.5, 4.15))   # \columnwidth print size, 8pt
+    (a1, a2), (a3, a4) = axes
+    for ax in axes.ravel():
+        bu.floating_axes(ax); bu.soft_grid(ax, "y")
+
+    for m, (xs, A, C, M, D) in series.items():
+        hero = (m == HEAD)
+        kw = dict(color=c(m), lw=2.2 if hero else 1.3, ms=4.2 if hero else 3.0,
+                  zorder=6 if hero else 3, marker=bu.mark(m) if hasattr(bu, "mark") else "o")
+        a1.plot(xs, A[:, 0], "-", **kw)
+        if hero:
+            a1.fill_between(xs, A[:, 0] - A[:, 1], A[:, 0] + A[:, 1],
+                            color=c(m), alpha=.15, lw=0, zorder=2)
+        a2.plot(xs, C, "-", **kw)
+        a3.plot(xs, M, "-", **kw)
+        a4.plot(xs, D, "-", **kw)
+
+    a3.axhline(eps, ls="--", lw=1.0, color="#c0392b", zorder=2)
+    a3.annotate(r"budget $\varepsilon$", xy=(min(_POWER_PTS) + 1.0, eps), fontsize=7,
+                color="#c0392b", va="top", ha="left", xytext=(0, -2),
+                textcoords="offset points")
+    # shade the powers at which SCOUT-FL's realised error reaches the budget
+    xs, _, _, M, _ = series[HEAD]
+    binding = xs[M >= eps * 0.95]
+    if len(binding):
+        for ax in (a1, a2, a3, a4):
+            ax.axvspan(xs.min() - 1, binding.max() + 1, color="#c0392b", alpha=.05, lw=0, zorder=1)
+
+    a3.set_yscale("log")
+    a1.set_ylabel("final accuracy (\\%)"); a2.set_ylabel("final-round CRB")
+    a3.set_ylabel("realised aggregation MSE"); a4.set_ylabel("settled dual price $\\mu$")
+    for ax in (a3, a4):
+        ax.set_xlabel("transmit power (dBm)")
+    for ax, t in zip(axes.ravel(), ["(a)", "(b)", "(c)", "(d)"]):
+        bu.panel_tag(ax, t, y=1.02)
+
+    handles = [Line2D([], [], color=c(m), lw=2.0, label=d(m)) for m in series]
+    fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=7.2, frameon=False,
+               bbox_to_anchor=(0.5, -0.004), handlelength=1.1, handletextpad=0.3,
+               columnspacing=0.7)
+    fig.tight_layout(rect=(0, 0.115, 1, 1), pad=0.35, w_pad=1.2, h_pad=1.3)
+    bu.save(fig, os.path.join(FIG, "fig14_power"))
+    print("  fig14_power ->", FIG)
+
+    stats = {m: {"tx_dbm": list(map(int, s[0])), "acc": [round(float(v), 2) for v in s[1][:, 0]],
+                 "crb_final": [round(float(v), 5) for v in s[2]],
+                 "agg_mse": [float(f"{v:.4g}") for v in s[3]],
+                 "dual": [float(f"{v:.4g}") for v in s[4]]} for m, s in series.items()}
+    os.makedirs(os.path.join(FIG, "stats"), exist_ok=True)
+    json.dump(stats, open(os.path.join(FIG, "stats", "power_sweep.json"), "w"), indent=1)

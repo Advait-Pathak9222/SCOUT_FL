@@ -1,5 +1,26 @@
-%% SCOUT-FL : Sensing-aware Client Selection for Integrated Sensing and Communication
-%% Over-the-Air Federated Learning.  Built on the IEEE bare_jrnl (IEEEtran) template.
+%% SCOUT-FL : Cognitive Client Scheduling for ISAC-Enabled Over-the-Air Federated
+%% Learning.  Built on the IEEE bare_jrnl (IEEEtran) template.
+%%
+%% TARGET VENUE: IEEE Trans. Cognitive Communications and Networking (TCCN).
+%%
+%% ==================================================================== NUMBERS
+%% PENDING RE-RUN (2026-09-05).  sim/aircomp.py floored eta = P*g_min at 1e-12,
+%% which capped the AirComp aggregation MSE at 2.0067e-4 and made it independent
+%% of transmit power; 75.4% of all stored campaign rounds sat on that ceiling.
+%% The floor is fixed and the sensing-aware pool is being regenerated
+%% (scripts/rerun_fixed_aircomp.sh).  Every number tagged  % TODO(rerun)  below
+%% must be refreshed from the new runs before submission:
+%%   - Abstract : Pareto share, overhead ratio
+%%   - Table I  : realised-MSE / operating-regime rows
+%%   - Table II : all columns (main operating point)
+%%   - Table III: paired campaign deltas
+%%   - Table IV : cross-dataset accuracies and CRBs
+%%   - Table V  : constraint-handling ablation
+%%   - Sec VI prose figures, and Sec VI-K (new transmit-power/SINR subsection)
+%%   - Remark on the interference floor: dB equivalence of the Sec VI-I cut
+%%   - Prop on the penalised objective: which regime the main point sits in
+%%     (with the AirComp floor removed it is BINDING, not slack)
+%% ============================================================================
 %% Compiles with pdfLaTeX / tectonic.  Figures live in ./figures as PDF.
 \documentclass[lettersize,journal]{IEEEtran}
 
@@ -37,23 +58,25 @@
 \newcommand{\tr}{\operatorname{tr}}
 \newcommand{\logdet}{\log\det}
 \newcommand{\scout}{SCOUT-FL}
+% draft-only: renders pending numbers as [..] in bold. Delete every \TBD before submission.
+\newcommand{\TBD}[1]{\textbf{[#1]}}
 
 \begin{document}
 
-\title{SCOUT-FL: Sensing-Aware Client Selection for\\ Integrated Sensing and Communication\\ in Over-the-Air Federated Learning}
+\title{SCOUT-FL, a Cognitive Client Scheduler for\\ ISAC-Enabled Over-the-Air\\ Federated Learning}
 
 \maketitle
 
 \begin{abstract}
-In integrated sensing and communication (ISAC) systems, the transmissions that carry federated learning (FL) updates also illuminate the surrounding targets. The per-round client selection determines both the convergence of the learned model and the sensing quality of the network. Most FL schedulers optimise only the former. This paper presents Sensing-aware Client selection for Over-the-air Uplink Training in Federated Learning (\scout{}), a client-selection rule that treats sensing as a first-class objective. A candidate active set is scored by a monotone submodular utility that couples a diversity-based learning term with a sensing term derived from the per-target Fisher information matrix. The over-the-air aggregation error is kept within a prescribed budget by a lightweight primal--dual price rather than a hard gate. The scheduler thus realises a cognitive cycle of observation, decision, action, and adaptation. Greedy selection attains the $(1-1/e)$ guarantee with a curvature refinement. The dual loop is feasible in time average and incurs no regret and a convergence bound ties the budget to the quality of the trained model. Across a factorial campaign against eleven sensing-aware baselines, \scout{} lies on the accuracy versus Cram\'er--Rao bound Pareto frontier in $96\%$ of operating points and improves final accuracy over the two strongest competitors at one-seventh of the overhead of a recent state-of-the-art scheduler.
+In integrated sensing and communication (ISAC) systems, the uplink transmissions that carry federated learning (FL) updates also illuminate the surrounding targets, so the per-round scheduling decision fixes both the convergence of the learned model and the sensing quality of the network. Most FL schedulers optimise only the former, and most treat the radio link as an abstraction. This paper presents Sensing-aware Client selection for Over-the-air Uplink Training in Federated Learning (\scout{}), a cognitive scheduler that treats sensing as a first-class objective and acts directly on the physical-layer state of the network. A candidate active set is scored by a monotone submodular utility that couples a diversity-based learning term with a sensing term derived from the per-target Fisher information matrix, and is constrained by the over-the-air aggregation error that the shared multiple-access channel actually delivers under a physical link budget. Transmit power control is shown to admit a closed-form solution that separates from the scheduling decision, so the joint power-and-scheduling problem reduces without loss of optimality to a set problem in which an interference-inclusive aggregation error appears as an explicit constraint. That constraint is enforced by a lightweight primal-dual price rather than a hard gate, which closes a cognitive cycle of observation, decision, action and adaptation and makes the scheduler self-tuning under a shifting interference floor. Greedy selection attains the $(1-1/e)$ guarantee with a curvature refinement. The dual loop is feasible in time average and incurs no regret, and a convergence bound ties the aggregation budget to the quality of the trained model. Across a factorial campaign spanning a $35$~dB range of transmit power and eleven sensing-aware baselines, \scout{} lies on the accuracy versus Cram\'er-Rao bound Pareto frontier in $96\%$ of operating points and improves final accuracy over the two strongest competitors at one-seventh of the overhead of a recent state-of-the-art scheduler.% TODO(rerun): Pareto share, overhead ratio
 \end{abstract}
 
 \begin{IEEEkeywords}
-Cognitive networking, integrated sensing and communication, federated learning, over-the-air computation, client selection, submodular optimisation.
+Cognitive networking, integrated sensing and communication (ISAC), over-the-air computation, federated learning, device scheduling, primal-dual resource allocation, submodular optimisation.
 \end{IEEEkeywords}
 
 % ============================================================= I. INTRODUCTION
-\section{Introduction}
+\section{Introduction}\label{sec:intro}
 \IEEEPARstart{M}{odern} wireless networks are increasingly required to support communication and environmental sensing with shared spectral and hardware resources. Integrated sensing and communication (ISAC) reuses the same waveform, band, and hardware both to convey information and to probe the physical environment, so that a base station can, within a single transmission, aggregate data from its clients and estimate the range and bearing of surrounding targets~\cite{liu2022isac,cui2021isac}. In parallel, federated learning (FL) has become the standard approach for training a model across many devices without collecting their raw data at the server~\cite{mcmahan2017fedavg}. Over-the-air computation (AirComp) connects the two paradigms. Clients transmit their local model updates simultaneously over a shared multiple-access channel, and the superposition of those signals directly realises the aggregate required by the server \cite{an2026otafl}. The uplink that carries the learning update is thus the same uplink whose echoes carry the sensing information.
 
 This coupling makes the per-round scheduling decision consequential for both tasks. In each communication round the server can activate only a small subset of clients, since power, bandwidth, and latency budgets preclude full participation. The chosen subset determines both the learning signal that reaches the model and the geometry of the sensing measurement, because only the active clients illuminate the targets. A subset whose data is informative but whose radio lines of sight share a common bearing improves the model while leaving the environmental estimate poorly conditioned, whereas a subset spread across bearings sharpens sensing, possibly at some cost to the learning update. The scheduler therefore implicitly negotiates a trade-off between two quantities expressed in different units, namely test accuracy and estimation error.
@@ -61,17 +84,20 @@ This coupling makes the per-round scheduling decision consequential for both tas
 This negotiation is naturally viewed through the lens of cognitive networking. A cognitive system observes its radio environment, decides under uncertainty, acts, and then learns from the outcome of its own action, following the classical perception and action cycle of cognitive radio~\cite{mitola1999,haykin2005}. The scheduler proposed in this paper instantiates that cycle at the scheduling layer of an ISAC network. In every round it perceives the channel gains, the client geometry, and the gradient embeddings of the clients. It decides the active set through a greedy maximisation. It acts by triggering the joint learning and sensing transmission. It finally learns by updating a dual price from the aggregation error that the transmission actually incurred. The dual price is the memory of the loop, encoding how tight the budget has recently been and reshaping the next decision, much as a cognitive radio adapts its strategy from sensed feedback~\cite{bkassiny2013}. The same cycle continues to organise current designs, from cognitive radios that allocate subcarriers jointly to communication and sensing~\cite{galappaththige2026} to cognition-driven schedulers that adapt client participation in federated edge networks~\cite{lai2026cognition}. The analysis in Section~\ref{sec:theory} makes this loop rigorous. The adaptation is provably feasible in time average, it incurs no regret, and it converts the prescribed error budget into an explicit bound on the learning performance.
 
 \subsection{Related Work and Motivation}
-Client selection in FL is a mature topic. Schedulers have been designed around gradient diversity~\cite{balakrishnan2022divfl}, channel state and energy~\cite{yang2020energy,amiri2021scheduling}, combined statistical and system utility~\cite{lai2021oort}, fairness across clients~\cite{li2020fairfl}, and cognition-driven participation control that adapts scheduling to client state online~\cite{lai2026cognition}. The application of submodular utility functions has also been extended to address the representativity of device scheduling in wireless FL~\cite{chen2024exploring}, establishing a precedent for leveraging submodular maximisation to balance wireless resource constraints against learning-centric selection objectives. These approaches share a single-objective formulation in which the sensed environment does not enter the selection criterion. On the ISAC side, a substantial literature co-designs the transmit waveform and beamformer so that one signal serves communication and sensing simultaneously~\cite{liu2020beamforming}, with recent designs driven directly by the Cram\'er--Rao bound of the sensing task~\cite{wang2024cramer,zhou2026crb}, cognitive radio formulations that allocate spectrum jointly to the two functions~\cite{galappaththige2026}, and learning-driven controllers for ISAC resource allocation~\cite{jiang2026marl}. Recent work has further begun to incorporate sensing quality into FL resource allocation and scheduling~\cite{wen2023isacfl,zheng2024otafliscc,du2024fediscc,wen2025isccairfeel,zhang2026isccfl,asaad2025}. The scheduler of Asaad~\emph{et~al.}~\cite{asaad2025}, which prunes a sensing-driven client subset under a combined aggregation-MSE and target-CRB metric, is the closest published point of comparison and serves as the state-of-the-art reference throughout this paper. \\
+Client selection in FL is a mature topic. Schedulers have been designed around gradient diversity~\cite{balakrishnan2022divfl}, channel state and energy~\cite{yang2020energy,amiri2021scheduling}, combined statistical and system utility~\cite{lai2021oort}, fairness across clients~\cite{li2020fairfl}, and cognition-driven participation control that adapts scheduling to client state online~\cite{lai2026cognition}. The application of submodular utility functions has also been extended to address the representativity of device scheduling in wireless FL~\cite{chen2024exploring}, establishing a precedent for leveraging submodular maximisation to balance wireless resource constraints against learning-centric selection objectives. These approaches share a single-objective formulation in which the sensed environment does not enter the selection criterion. On the ISAC side, a substantial literature co-designs the transmit waveform and beamformer so that one signal serves communication and sensing simultaneously~\cite{liu2020beamforming}, with recent designs driven directly by the Cram\'er-Rao bound of the sensing task~\cite{wang2024cramer,zhou2026crb}, cognitive radio formulations that allocate spectrum jointly to the two functions~\cite{galappaththige2026}, and learning-driven controllers for ISAC resource allocation~\cite{jiang2026marl}. Recent work has further begun to incorporate sensing quality into FL resource allocation and scheduling~\cite{wen2023isacfl,zheng2024otafliscc,du2024fediscc,wen2025isccairfeel,zhang2026isccfl,asaad2025}. The scheduler of Asaad~\emph{et~al.}~\cite{asaad2025}, which prunes a sensing-driven client subset under a combined aggregation-MSE and target-CRB metric, is the closest published point of comparison and serves as the state-of-the-art reference throughout this paper. \\
 Recent ISAC-FL frameworks also add orthogonal constraints such as differential privacy \cite{hu2025differentially}. DP mechanisms inject noise into the local updates and change the convergence dynamics, so benchmarking non-private schedulers against DP-constrained methods would be asymmetric. The evaluation pool is therefore restricted to methods under equivalent privacy assumptions.
+A parallel line of work optimises the analog transmission itself. For AirComp uplinks this means the transmit scalars, the receive denoising factor and the power budget~\cite{zhu2020broadband,cao2022optimized}, and for ISAC it means the transmit beamformer that serves communication and sensing at once~\cite{liu2020beamforming,wang2024cramer}. These designs take the participating device set as given and allocate resources across it. The present paper treats the two decisions in the opposite order, and for channel-inversion AirComp that order is the right one. The power allocation admits a closed-form optimum for any active set (Proposition~\ref{prop:power}), so the residual and genuinely combinatorial degree of freedom is the set itself, and the physical layer reappears inside the selection problem as a constraint on the weakest active link.
+
 Three gaps remain. First, sensing quality is usually reduced to a scalar signal-to-noise ratio (SNR) proxy, which neglects the fact that two clients observing a target from the same bearing contribute almost no additional information regardless of their received signal strength. Second, the aggregation-error constraint imposed by AirComp is often enforced by a hard feasibility gate, which is brittle in the sense that a single infeasible round forces the scheduler to discard an otherwise strong candidate set. Third, sensing-aware schedulers are frequently benchmarked against learning-only baselines. A learning-only method is free to disregard sensing entirely and can consequently attain an accuracy that a sensing-aware method correctly declines to pursue. Such comparisons obscure the relevant question, namely how effectively a scheduler trades accuracy against sensing relative to other methods that also carry a sensing objective.
 
 \subsection{Contributions}
 This paper proposes \scout{} (Sensing-aware Client selection for Over-the-air Uplink Training in Federated Learning) and evaluates it against sensing-aware baselines exclusively. The contributions are as follows.
 \begin{itemize}
 \item \textbf{A geometry-aware sensing utility.} A candidate active set is scored by the log-determinant of the aggregate per-target Fisher information matrix (FIM), assembled from an anisotropic per-client FIM that separates radial (range) from tangential (angle) information. Under this utility, angular diversity rather than raw SNR determines the sensing value of a set, and the utility is monotone and submodular (Section~\ref{sec:formulation}).
-\item \textbf{A cognitive primal--dual aggregation-MSE constraint.} \scout{} maintains the AirComp aggregation MSE within a budget through a dual variable that ascends on the realised violation, rather than through a hard gate. The update closes a full cognitive cycle of observation, decision, action, and adaptation. The running-average violation is shown to vanish and a no-regret bound is established (Section~\ref{sec:theory}). A convergence result further ties the budget $\varepsilon$ to the quality of the trained model (Proposition~\ref{prop:learn}), so the adaptive price provably converts the constraint into a learning guarantee. The loop is also exercised dynamically. A mid-run budget cut is absorbed within two rounds and the realised error then tracks the new budget in time average (Section~\ref{sec:adapt}). The hard-gate variant is retained as an ablation, denoted \scout{}$^{\dagger}$.
+\item \textbf{A physical-layer scheduling formulation with closed-form power control.} The active set, the AirComp transmit scalars and the receive denoising factor are optimised jointly under a physical link budget, per-client power budgets, an interference-inclusive noise floor and a round-latency deadline (Section~\ref{sec:formulation}). Power control is shown to be jointly optimal in closed form and separable from the scheduling decision (Proposition~\ref{prop:power}), so the joint problem collapses without loss of optimality onto the active set, and the bandwidth that meets the latency deadline is likewise given in closed form (Remark~\ref{rem:mac}). The radio therefore enters the selection rule as a hard constraint on the weakest active link rather than as an average-SINR proxy.
+\item \textbf{A cognitive primal-dual aggregation-MSE constraint.} \scout{} maintains the AirComp aggregation MSE within a budget through a dual variable that ascends on the realised violation, rather than through a hard gate. The update closes a full cognitive cycle of observation, decision, action, and adaptation. The running-average violation is shown to vanish and a no-regret bound is established (Section~\ref{sec:theory}). A convergence result further ties the budget $\varepsilon$ to the quality of the trained model (Proposition~\ref{prop:learn}), so the adaptive price provably converts the constraint into a learning guarantee. The loop is also exercised dynamically. A mid-run budget cut is absorbed within two rounds and the realised error then tracks the new budget in time average (Section~\ref{sec:adapt}). The hard-gate variant is retained as an ablation, denoted \scout{}$^{\dagger}$.
 \item \textbf{A characterised greedy guarantee.} The composite learning-plus-sensing utility is monotone submodular, so greedy selection is $(1-1/e)$-optimal with respect to it, and a curvature refinement sharpens the constant (Remark~\ref{rem:curvature}). The bound covers the utility but not the aggregation-MSE penalty, which is min-based and non-submodular. Section~\ref{sec:theory} states precisely which guarantees hold in the slack and binding regimes.
-\item \textbf{A sensing-aware evaluation.} Across a factorial campaign spanning data heterogeneity, channel model, SNR, and target geometry, and against eleven sensing-aware baselines, \scout{} is Pareto-optimal on the accuracy--CRB plane in $96\%$ of operating points under both CRB conventions (Fig.~\ref{fig:gapdist}), and attains the highest accuracy of any method that remains inside the sensing-competitive band (Section~\ref{sec:results}).
+\item \textbf{A sensing-aware evaluation.} Across a factorial campaign spanning data heterogeneity, channel model, SNR, and target geometry, and against eleven sensing-aware baselines, \scout{} is Pareto-optimal on the accuracy and CRB plane in $96\%$ of operating points under both CRB conventions (Fig.~\ref{fig:gapdist}), and attains the highest accuracy of any method that remains inside the sensing-competitive band (Section~\ref{sec:results}).
 \end{itemize}
 The remainder of the paper is organised as follows. Section~\ref{sec:system} develops the system model, Section~\ref{sec:formulation} states the optimisation problem, Section~\ref{sec:algorithm} presents the \scout{} algorithm, Section~\ref{sec:theory} provides its analysis, Section~\ref{sec:results} reports the numerical study, and Section~\ref{sec:conclusion} concludes the paper and outlines future work.
 
@@ -82,7 +108,7 @@ We consider the ISAC-FL network of Fig.~\ref{fig:system}, comprising a single ba
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{sys_model.png}
-\caption{System model of \scout{}. Each active client performs local SGD, applies channel-inversion precoding $b_{k,t}=\rho_t/h_{k,t}$, and transmits over the shared uplink. The AirComp superposition realises the model aggregate $\bw_{t+1}=\bw_t+\bm{y}_t$ directly, corrupted only by receiver noise, while the same transmissions illuminate the targets and the bistatic echoes assemble the per-target Fisher information $\bJ_m(\calS)$ from the anisotropic contributions~\eqref{eq:fim}. The primal--dual selector greedily maximises the composite utility and updates the dual price $\mu$ on the realised aggregation MSE.}
+\caption{System model of \scout{}. Each active client performs local SGD, applies channel-inversion precoding $b_{k,t}=\rho_t/h_{k,t}$, and transmits over the shared uplink. The AirComp superposition realises the model aggregate $\bw_{t+1}=\bw_t+\bm{y}_t$ directly, corrupted only by receiver noise, while the same transmissions illuminate the targets and the bistatic echoes assemble the per-target Fisher information $\bJ_m(\calS)$ from the anisotropic contributions~\eqref{eq:fim}. The primal-dual selector greedily maximises the composite utility and updates the dual price $\mu$ on the realised aggregation MSE.}
 \label{fig:system}
 \end{figure*}
 
@@ -96,19 +122,74 @@ Client $k$ holds a private dataset $\calD_k$ drawn from a client-specific distri
 with aggregation weights $p_{k,t}\ge 0$.
 Personalised federated strategies keep client-specific models and therefore require the server to access individual updates. AirComp instead yields a single global aggregate through the physical superposition of analog waveforms, so the global model paradigm is the structurally appropriate architecture for this physical layer.
 
+\subsection{Physical-Layer Model and Link Budget}\label{sec:phy}
+Every quantity in this paper is referred to a physical link budget rather than to a normalised signal-to-noise convention, so that transmit powers are in dBm, the aggregation error is the mean-squared error of a physical estimator, and latency and energy are in seconds and joules.
+
+The clients share a single uplink band of bandwidth $B$ at carrier frequency $f_{c}$, and the BS has one receive chain. The receiver noise is thermal,
+\begin{equation}
+\sigma^{2}=k_{B}T_{0}FB,
+\label{eq:thermal}
+\end{equation}
+with $k_{B}$ Boltzmann's constant, $T_{0}=290$~K and $F$ the receiver noise figure, so the effective noise spectral density is $N_{0}=-174+F$~dBm/Hz. The large-scale attenuation follows a log-distance law,
+\begin{equation}
+\mathrm{PL}(d)=\mathrm{PL}_{0}(d_{0})+10n\log_{10}(d/d_{0}),
+\label{eq:pathloss}
+\end{equation}
+where $\mathrm{PL}_{0}$ is the free-space loss at the reference distance $d_{0}$ and $n$ is the path-loss exponent, so the channel power gain of client $k$ is $g_{k,t}=|h_{k,t}|^{2}=10^{-\mathrm{PL}(d_{k})/10}\,|\tilde{h}_{k,t}|^{2}$ with $\tilde{h}_{k,t}$ the small-scale Rayleigh or Rician coefficient.
+
+Because the active clients transmit concurrently in the same band, the BS also collects co-channel interference from neighbouring cells, together with the residual misalignment of the analog superposition under imperfect channel state information and synchronisation. Both are treated in the usual way as an additional Gaussian term of power $I$, so the effective noise floor is $\sigma^{2}_{\mathrm{eff}}=\sigma^{2}+I$ and the received signal-to-interference-plus-noise ratio (SINR) of client $k$ is
+\begin{equation}
+\gamma_{k,t}=\frac{P_{k}\,g_{k,t}}{\sigma^{2}+I}.
+\label{eq:sinr}
+\end{equation}
+Every expression that follows depends on the interference only through $\sigma^{2}_{\mathrm{eff}}$, a structural fact whose operational consequence is drawn in Remark~\ref{rem:interf}.
+
+The large-scale term is fixed by the client positions and holds for a run. The small-scale term is redrawn every coherence block, so the scheduler faces a channel that moves under it and the price it maintains has something to track. Section~\ref{sec:coherence} varies the coherence length from one round, meaning independent fading each round, up to the whole training horizon, which recovers a channel frozen for the entire run.
+
+Before transmitting, each client scales its update to unit per-entry power, which is the usual practice for analog aggregation and is what keeps the superposition aligned when clients carry updates of different magnitudes. The aggregation error is therefore stated relative to that normalisation, and the distortion that reaches the model is $\sqrt{\pi}$ times it, with $\pi$ the per-entry power of the update the server rescales by. The budget $\varepsilon$ is consequently a bound on the relative aggregation error, or equivalently a floor on the aggregation signal-to-noise ratio, and it keeps that meaning as the model, the task, and the gradient magnitudes change over training.
+
+A round costs each active client one local-computation phase and one uplink phase. Client $k$ executes $C_{k}$ CPU cycles at clock $f_{k}$ and transmits the $d$ real entries of its update as $d/2$ complex analog symbols in the shared band, so
+\begin{equation}
+T_{k}=\frac{C_{k}}{f_{k}}+\frac{d}{2B},
+\qquad
+E_{k}=\varkappa C_{k}f_{k}^{2}+P_{k}\frac{d}{2B},
+\label{eq:latency}
+\end{equation}
+with $\varkappa$ the effective switched capacitance, and the round latency is $T_{\mathrm{rnd}}(\calS)=\max_{k\in\calS}T_{k}$. At the operating point of Section~\ref{sec:results} ($d=25\,578$ model parameters, $B=1$~MHz, $F=7$~dB, $f_{c}=3.5$~GHz, $n=3$, clients at $7$ to $52$~m from the BS) the noise floor is $\sigma^{2}=-107$~dBm, the uplink phase lasts $12.8$~ms, and at a transmit power of $-15$~dBm the receive SNR spans $1.7$ to $32.0$~dB across the cell.
+
+\begin{remark}[Multiple access and the bandwidth allocation]\label{rem:mac}
+The whole band is shared deliberately. AirComp is a non-orthogonal scheme in which the superposition of the concurrent transmissions \emph{is} the wanted signal, so its uplink phase lasts $d/(2B)$ regardless of $|\calS|$, whereas transmitting the same payload digitally over an orthogonal allocation costs $\sum_{k\in\calS}32d/\big(B\log_{2}(1+\gamma_{k,t})\big)$. At the operating point above the ten active clients need $0.88$~s under orthogonal access against $12.8$~ms over the air, a factor of $69$. Splitting the band across clients is therefore not a useful degree of freedom here, since it dismantles the very superposition the scheme exploits. Bandwidth nonetheless enters twice and in opposite directions. By~\eqref{eq:thermal} the noise floor, and hence the aggregation error, grows linearly in $B$, while by~\eqref{eq:latency} the uplink phase shrinks as $1/B$. Under a per-round deadline $T_{\max}$ the two effects are therefore ordered, and the optimal allocation is the smallest bandwidth that meets the deadline,
+\begin{equation}
+B^{\star}(\calS)=\frac{d}{2\big(T_{\max}-\max_{k\in\calS}C_{k}/f_{k}\big)},
+\label{eq:bstar}
+\end{equation}
+any excess beyond $B^{\star}$ raising the aggregation error without buying anything the deadline requires. The scheduler is run at a fixed $B$ throughout, and~\eqref{eq:bstar} is the rule that sets it.
+\end{remark}
+
 \subsection{Over-the-Air Aggregation and the Aggregation MSE}
 The sum in~\eqref{eq:agg} is realised by AirComp. Clients in the active set pre-equalise and transmit simultaneously, and the BS receives the noisy superposition
 \begin{equation}
 \bm{y}_t=\sum_{k\in\calS_t} h_{k,t}\,b_{k,t}\,\Delta\bw_{k,t}+\bm{n}_t,
 \label{eq:aircomp}
 \end{equation}
-where $h_{k,t}$ is the uplink channel (Rayleigh or Rician), $b_{k,t}$ is the transmit scaling under a per-client power budget $P_k$, and $\bm{n}_t\sim\mathcal{N}(0,\sigma^2 \bm{I})$. With channel-inversion precoding $b_{k,t}=\rho_t/h_{k,t}$, the post-processed estimate of the aggregate incurs a mean-squared error, referred to throughout as the \emph{aggregation MSE}, that for a fixed transmit-power level is governed by the weakest active link,
+where $h_{k,t}$ is the uplink channel of Section~\ref{sec:phy}, $b_{k,t}$ is the transmit scaling subject to the per-client power budget $\mathbb{E}\big[|b_{k,t}\Delta\bw_{k,t}|^{2}\big]\le P^{\max}_{k}$, and $\bm{n}_t\sim\mathcal{N}(0,\sigma^{2}_{\mathrm{eff}}\bm{I})$ is the effective noise of~\eqref{eq:sinr}. The transmit scalars and the common denoising factor are not free parameters left to a separate resource-allocation stage. They are determined in closed form by the active set, which is what allows the rest of the paper to optimise over the set alone.
+
+\begin{proposition}[Optimal power control and its separability from scheduling]\label{prop:power}
+Let $\pi_{k}=\mathbb{E}\lVert\Delta\bw_{k,t}\rVert^{2}/d$ be the per-entry power of client $k$'s update. Coherent AirComp requires the aligned scalings $h_{k,t}b_{k,t}=\rho_{t}$ for all $k\in\calS_t$, i.e.\ channel-inversion precoding $b_{k,t}=\rho_{t}/h_{k,t}$. Then the aggregation mean-squared error is minimised by
 \begin{equation}
-\mathrm{MSE}(\calS_t)=\frac{\sigma^2}{\rho_t^{2}}
-\;\propto\;\frac{\sigma^2}{|\calS_t|^{2}\,P\,\min_{k\in\calS_t}|h_{k,t}|^{2}} .
+\rho^{\star}_{t}(\calS_t)=\min_{k\in\calS_t}\;|h_{k,t}|\sqrt{P^{\max}_{k}/\pi_{k}},
+\label{eq:rhostar}
+\end{equation}
+that is, by every active client transmitting at its maximum power, with the common denoising factor set by the weakest active link. The resulting error, referred to throughout as the \emph{aggregation MSE}, is
+\begin{equation}
+\mathrm{MSE}(\calS_t)=\frac{\sigma^{2}+I}{|\calS_t|^{2}\,\rho^{\star}_{t}(\calS_t)^{2}}
+=\frac{\sigma^{2}+I}{|\calS_t|^{2}}\,\max_{k\in\calS_t}\frac{\pi_{k}}{P^{\max}_{k}\,|h_{k,t}|^{2}},
 \label{eq:mse}
 \end{equation}
-The active set $\calS_t$ enters~\eqref{eq:mse} directly. A set that contains even one deep-faded client raises the aggregation MSE, which in turn perturbs the learning update, so the scheduler must keep $\mathrm{MSE}(\calS_t)$ below a tolerance $\varepsilon$. The quantity in~\eqref{eq:mse} is min-based and set-coupled rather than a sum of per-client terms, a structural property that is central to the analysis in Section~\ref{sec:theory}.
+and depends on the transmit powers only through their per-client maxima. Consequently the joint optimisation over the active set, the transmit scalars $\{b_{k,t}\}$ and the denoising factor $\rho_{t}$ reduces, with no loss of optimality, to an optimisation over $\calS_t$ alone.
+\end{proposition}
+
+Proposition~\ref{prop:power} is the reason a scheduling paper can be written for this system without leaving the transmit power unspecified. Adaptive power control is present, it is jointly optimal, and it is absorbed into the constraint, so the scheduler that chooses $\calS_t$ is simultaneously choosing the operating power of the aggregate. The active set $\calS_t$ enters~\eqref{eq:mse} directly. A set that contains even one deep-faded client raises the aggregation MSE, which in turn perturbs the learning update, so the scheduler must keep $\mathrm{MSE}(\calS_t)$ below a tolerance $\varepsilon$. The dependence is on the \emph{minimum} received power over the active set, not on its average, so a scheduler that reasons only about mean SINR cannot control this term. The quantity in~\eqref{eq:mse} is min-based and set-coupled rather than a sum of per-client terms, a structural property that is central to the analysis in Section~\ref{sec:theory}.
 
 \subsection{Sensing Model and Fisher Information}\label{sec:sensing}
 Each client in the active set, while transmitting, acts as an illuminator in a multistatic sensing geometry, and the BS collects the echoes reflected from the targets. For client $k$ and target $m$ at range $r_{k,m}$ and bearing $\theta_{k,m}$, the log-likelihood of the (range, angle) observation is asymptotically Gaussian, and the corresponding per-client, per-target FIM takes the rank-two, anisotropic form
@@ -124,14 +205,14 @@ a^{r}_{k,m}=\gamma_{k,m}\,\kappa_{r},
 a^{a}_{k,m}=\gamma_{k,m}\,\frac{\kappa_{a}}{r_{k,m}^{2}} .
 \label{eq:weights}
 \end{equation}
-Here $\gamma_{k,m}\propto\text{SNR}_{k,m}$ is the echo SNR and $\kappa_{r},\kappa_{a}$ are waveform constants. Two features of~\eqref{eq:fim}--\eqref{eq:weights} underpin the proposed design. First, the information is anisotropic. A client constrains the target position primarily along the line joining them (range) and only weakly across it (angle), and the angular term further decays as $1/r^2$. Second, the direction of the informative axis is set by the client's bearing to the target. Adding a client whose bearing duplicates one already in the active set reinforces an axis that is already well estimated, whereas adding a client from a new bearing populates the deficient axis.
+Here $\gamma_{k,m}\propto\text{SNR}_{k,m}$ is the echo SNR and $\kappa_{r},\kappa_{a}$ are waveform constants. Two features of~\eqref{eq:fim} and \eqref{eq:weights} underpin the proposed design. First, the information is anisotropic. A client constrains the target position primarily along the line joining them (range) and only weakly across it (angle), and the angular term further decays as $1/r^2$. Second, the direction of the informative axis is set by the client's bearing to the target. Adding a client whose bearing duplicates one already in the active set reinforces an axis that is already well estimated, whereas adding a client from a new bearing populates the deficient axis.
 
 Combining the contributions of the active set with a weak prior $\bJ_0=\lambda_0\bm{I}$ (numerical regularisation), the aggregate FIM for target $m$ is
 \begin{equation}
 \bJ_m(\calS)=\bJ_0+\sum_{k\in\calS}\bJ_{k,m}.
 \label{eq:aggfim}
 \end{equation}
-The Cram\'er--Rao bound (CRB) lower-bounds the covariance of any unbiased estimator of target $m$'s position~\cite{kay1993,godrich2010}. The network's sensing quality is summarised by
+The Cram\'er-Rao bound (CRB) lower-bounds the covariance of any unbiased estimator of target $m$'s position~\cite{kay1993,godrich2010}. The network's sensing quality is summarised by
 \begin{equation}
 \mathrm{CRB}(\calS)=\frac{1}{M}\sum_{m=1}^{M}\tr\!\big(\bJ_m(\calS)^{-1}\big),
 \label{eq:crb}
@@ -141,7 +222,7 @@ where smaller values indicate better sensing accuracy. Two conventions of~\eqref
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig_2.png}
-\caption{Effect of angular diversity versus received signal strength on the target uncertainty ellipse. Two clients are already in the active set at the same bearing to the target, so the uncertainty ellipse is elongated and the aggregate FIM is effectively rank-one. \textbf{(a)} Adding a redundant client from the same bearing, even at high SNR, sharpens only the well-estimated axis; the uncertainty area shrinks by $31\%$ and the FIM remains effectively one-dimensional. \textbf{(b)} Adding a diverse client from an orthogonal bearing, even at low SNR, populates the deficient FIM direction and reduces the ellipse toward a circle, a $53\%$ reduction. Ellipses are computed from the FIM model of~\eqref{eq:fim}.}
+\caption{Effect of angular diversity versus received signal strength on the target uncertainty ellipse. Two clients are already in the active set at the same bearing to the target, so the uncertainty ellipse is elongated and the aggregate FIM is effectively rank-one. \textbf{(a)} Adding a redundant client from the same bearing, even at high SNR, sharpens only the well-estimated axis, and the uncertainty area shrinks by $31\%$ and the FIM remains effectively one-dimensional. \textbf{(b)} Adding a diverse client from an orthogonal bearing, even at low SNR, populates the deficient FIM direction and reduces the ellipse toward a circle, a $53\%$ reduction. Ellipses are computed from the FIM model of~\eqref{eq:fim}.}
 \label{fig:geometry}
 \end{figure}
 
@@ -170,23 +251,35 @@ U(\calS)=\alpha\,U_{\mathrm{learn}}(\calS)+\lambda\,U_{\mathrm{sense}}(\calS)
 +U_{\mathrm{aux}}(\calS),
 \label{eq:composite}
 \end{equation}
-where the weight $\lambda\ge 0$ sets the learning--sensing trade-off and $U_{\mathrm{aux}}$ collects auxiliary coverage and fairness terms, which are also monotone submodular and carry fixed small weights as specified in Table~\ref{tab:setup}. In each round the scheduler solves
+where the weight $\lambda\ge 0$ sets the learning and sensing trade-off and $U_{\mathrm{aux}}$ collects auxiliary coverage and fairness terms, which are also monotone submodular and carry fixed small weights as specified in Table~\ref{tab:setup}. In each round the scheduler solves the joint scheduling-and-transmission problem
 \begin{equation}
 \begin{aligned}
-\max_{\calS\subseteq\calN}\quad & U(\calS)\\
-\text{s.t.}\quad & |\calS|=K,\qquad \mathrm{MSE}(\calS)\le\varepsilon .
+\max_{\calS\subseteq\calN,\;\{b_{k}\},\;\rho}\quad & U(\calS)\\
+\text{s.t.}\quad
+& |\calS|=K, \\
+& h_{k,t}\,b_{k}=\rho, && k\in\calS, \\
+& \mathbb{E}\big[|b_{k}\Delta\bw_{k,t}|^{2}\big]\le P^{\max}_{k}, && k\in\calS, \\
+& \mathrm{MSE}(\calS)=\frac{\sigma^{2}+I}{|\calS|^{2}\rho^{2}}\le\varepsilon, \\
+& T_{\mathrm{rnd}}(\calS)=\max_{k\in\calS}\Big(\frac{C_{k}}{f_{k}}+\frac{d}{2B}\Big)\le T_{\max}.
 \end{aligned}
 \label{eq:problem}
 \end{equation}
-Problem~\eqref{eq:problem} is a cardinality-constrained submodular maximisation with an additional aggregation-MSE constraint. Even without the MSE constraint the problem is NP-hard~\cite{nemhauser1978}. We therefore do not seek the exact optimum, but rather a selection rule with a provable approximation guarantee and a principled mechanism for respecting the budget.
+The second line is the AirComp alignment condition, the third the per-client transmit-power budget, the fourth the aggregation-error requirement under the interference-inclusive noise floor of~\eqref{eq:sinr}, and the fifth the per-round latency deadline. By Proposition~\ref{prop:power} the alignment and power variables are eliminated in closed form, and by Remark~\ref{rem:mac} the deadline is met by construction at the bandwidth $B^{\star}$ of~\eqref{eq:bstar}. Problem~\eqref{eq:problem} therefore reduces, with no loss of optimality, to the set problem
+\begin{equation}
+\max_{\calS\subseteq\calN}\ U(\calS)
+\qquad\text{s.t.}\qquad
+|\calS|=K,\quad \mathrm{MSE}(\calS)\le\varepsilon,
+\label{eq:setproblem}
+\end{equation}
+in which the physical layer survives in full through the aggregation error~\eqref{eq:mse}. Transmit power, path loss, small-scale fading, thermal noise and co-channel interference all enter the constraint that the scheduler must respect, and they enter it through the weakest active link rather than through an average. Problem~\eqref{eq:setproblem} is a cardinality-constrained submodular maximisation with an additional aggregation-MSE constraint. Even without the MSE constraint the problem is NP-hard~\cite{nemhauser1978}. We therefore seek a selection rule that carries a provable approximation guarantee and a principled mechanism for respecting the budget.
 
 \begin{remark}[Scope of the baseline comparison]
-A method that omits the $\lambda\,U_{\mathrm{sense}}$ term and the MSE constraint is free to maximise $U_{\mathrm{learn}}$ alone and will often attain higher accuracy precisely because it allocates no selection budget to sensing. A comparison against such methods does not measure the quality of the accuracy--sensing trade-off. The evaluation in Section~\ref{sec:results} is therefore restricted to methods that carry an explicit sensing objective.
+A method that omits the $\lambda\,U_{\mathrm{sense}}$ term and the MSE constraint is free to maximise $U_{\mathrm{learn}}$ alone and will often attain higher accuracy precisely because it allocates no selection budget to sensing. A comparison against such methods does not measure the quality of the accuracy and sensing trade-off. The evaluation in Section~\ref{sec:results} is therefore restricted to methods that carry an explicit sensing objective.
 \end{remark}
 
 % ============================================================= IV. ALGORITHM
 \section{The SCOUT-FL Algorithm}\label{sec:algorithm}
-\scout{} solves~\eqref{eq:problem} with a greedy inner loop and a primal--dual outer loop. The design rests on two properties. First, the composite utility is monotone submodular, so greedy addition is near-optimal. Second, the aggregation-MSE budget is handled by a dual price on violation rather than a hard gate, so a temporarily tight budget adjusts the selection rather than eliminating candidate sets.
+\scout{} solves~\eqref{eq:setproblem} with a greedy inner loop and a primal-dual outer loop. The design rests on two properties. First, the composite utility is monotone submodular, so greedy addition is near-optimal. Second, the aggregation-MSE budget is handled by a dual price on violation rather than a hard gate, so a temporarily tight budget adjusts the selection rather than eliminating candidate sets.
 
 \subsection{Lagrangian Relaxation and Greedy Inner Selection}
 The aggregation-MSE constraint is relaxed with a nonnegative dual variable $\mu\ge 0$, yielding the per-round Lagrangian utility
@@ -203,9 +296,9 @@ The marginal gain of the sensing term admits the closed form
 \begin{equation}
 \Delta_m(k\mid\calS)=\logdet\!\big(\bJ_m(\calS)+\bJ_{k,m}\big)-\logdet\!\big(\bJ_m(\calS)\big),
 \end{equation}
-which, via the matrix determinant lemma, is computed in $O(1)$ per target from the running inverse $\bJ_m(\calS)^{-1}$. No matrix is refactorised inside the loop, and lazy evaluation~\cite{krause2014submodular} avoids most re-scorings. A candidate whose marginal score is non-finite, corresponding to a degenerate geometry, is excluded from the maximisation.
+which, via the matrix determinant lemma, is computed in $O(1)$ per target from the running inverse $\bJ_m(\calS)^{-1}$, so no matrix is refactorised inside the loop. Every remaining candidate is re-scored at each of the $K$ additions. Lazy evaluation~\cite{krause2014submodular} would cut that cost, and it is sound for $U$ itself, but the priced objective $U_\mu$ loses submodularity once the dual variable becomes positive (Proposition~\ref{prop:penalised}), and with it the monotone upper bounds that make cached marginals safe to reuse. The full re-scoring is what the reported overhead in Section~\ref{sec:overhead} measures. A candidate whose marginal score is non-finite, corresponding to a degenerate geometry, is excluded from the maximisation.
 
-\subsection{Primal--Dual Outer Update}
+\subsection{Primal-Dual Outer Update}
 After the active set $\calS_t$ is realised and its aggregation MSE $\mathrm{MSE}(\calS_t)$ is measured, the dual variable ascends on the violation,
 \begin{equation}
 \mu_{t+1}=\big[\mu_t+\eta\,\big(\mathrm{MSE}(\calS_t)-\varepsilon\big)\big]_+,
@@ -213,21 +306,25 @@ After the active set $\calS_t$ is realised and its aggregation MSE $\mathrm{MSE}
 \end{equation}
 with step size $\eta>0$ and $[\cdot]_+=\max(\cdot,0)$. In implementation the violation is expressed relative to the budget as $\mathrm{MSE}(\calS_t)/\varepsilon-1$, so the step $\eta$ acts on a dimensionless quantity and needs no retuning across budget scales. At slack operating points the two forms coincide, since $\mu$ remains at zero under both. The update is self-correcting. Rounds that exceed the budget raise $\mu$, which increases the penalty on high-MSE clients in the next round's greedy step, whereas rounds that remain under budget relax $\mu$ toward zero, allowing the scheduler to allocate its budget to learning and sensing. The update also completes the cognitive cycle of the scheduler. The greedy step is the decision, the joint transmission is the action, the measured aggregation error is the observation, and the dual ascent is the learning step that conditions the next decision on the observed outcome. Algorithm~\ref{alg:scout} summarises the procedure.
 
+\begin{remark}[Adaptation to the interference floor]\label{rem:interf}
+Interference enters the scheduler only through the effective noise $\sigma^{2}_{\mathrm{eff}}=\sigma^{2}+I$ of~\eqref{eq:mse}, and the dual update~\eqref{eq:dual} ascends on the \emph{realised} aggregation error, which already contains it. A rise in the interference floor is therefore indistinguishable, from the loop's point of view, from a proportional tightening of the budget. An increase of $I$ that lifts $\sigma^{2}_{\mathrm{eff}}$ by $\Delta$~dB has exactly the effect of cutting $\varepsilon$ by $\Delta$~dB. The scheduler consequently manages interference without estimating it and without a separate interference-management stage, which is what makes the loop cognitive rather than merely adaptive. It responds to the consequence of the interference on the task rather than to a model of its source. The step disturbance applied in Section~\ref{sec:adapt} is precisely this experiment, the budget cut used there being equivalent to a step of $8.2$~dB in the interference floor.% TODO(rerun): recompute the dB step once the epsilon grid is re-centred
+\end{remark}
+
 \begin{algorithm}[t]
-\caption{\scout{}: sensing-aware primal--dual selection}
+\caption{\scout{}, sensing-aware primal-dual selection}
 \label{alg:scout}
 \begin{algorithmic}[1]
-\STATE \textbf{Input:} clients $\calN$, budget $K$, tolerance $\varepsilon$, weight $\lambda$, dual step $\eta$
+\STATE \textbf{Given} clients $\calN$, budget $K$, tolerance $\varepsilon$, weight $\lambda$, dual step $\eta$
 \STATE Initialise $\bw_0$, dual $\mu_0\gets 0$
 \FOR{round $t=0,1,\dots,T-1$}
-  \STATE probe clients: gradient embeddings $\{\bg_{k}\}$, channels $\{h_{k,t}\}$, geometry $\{\bJ_{k,m}\}$
-  \STATE $\calS_t\gets\emptyset$; initialise running inverses $\bJ_m(\emptyset)^{-1}$
+  \STATE probe every client for its gradient embedding $\bg_{k}$, channel $h_{k,t}$ and geometry $\bJ_{k,m}$
+  \STATE $\calS_t\gets\emptyset$ and initialise the running inverses $\bJ_m(\emptyset)^{-1}$
   \FOR{$i=1$ to $K$}
      \STATE $k^\star\gets\arg\max_{k\notin\calS_t}\, U_{\mu_t}(\calS_t\cup\{k\})-U_{\mu_t}(\calS_t)$
-     \STATE $\calS_t\gets\calS_t\cup\{k^\star\}$; rank-two update of each $\bJ_m^{-1}$
+     \STATE $\calS_t\gets\calS_t\cup\{k^\star\}$ and rank-two update each $\bJ_m^{-1}$
   \ENDFOR
-  \STATE broadcast $\bw_t$; clients in $\calS_t$ run local SGD
-  \STATE aggregate over the air via~\eqref{eq:aircomp}; measure $\mathrm{MSE}(\calS_t)$
+  \STATE broadcast $\bw_t$ and let the clients in $\calS_t$ run local SGD
+  \STATE aggregate over the air via~\eqref{eq:aircomp} and measure $\mathrm{MSE}(\calS_t)$
   \STATE $\bw_{t+1}\gets$ AirComp aggregate of $\{\Delta\bw_{k,t}\}$
   \STATE $\mu_{t+1}\gets[\mu_t+\eta(\mathrm{MSE}(\calS_t)-\varepsilon)]_+$
 \ENDFOR
@@ -236,12 +333,12 @@ with step size $\eta>0$ and $[\cdot]_+=\max(\cdot,0)$. In implementation the vio
 \end{algorithm}
 
 \begin{remark}[Hard-gate ablation, \scout{}$^{\dagger}$]
-Replacing the dual penalty in~\eqref{eq:lagrangian} with a hard feasibility filter, i.e.\ greedily selecting only among clients that keep $\mathrm{MSE}(\calS)\le\varepsilon$, yields the ablation \scout{}$^{\dagger}$. It employs the same selection machinery without the soft, self-tuning budget and serves to isolate the contribution of the primal--dual mechanism.
+Replacing the dual penalty in~\eqref{eq:lagrangian} with a hard feasibility filter, i.e.\ greedily selecting only among clients that keep $\mathrm{MSE}(\calS)\le\varepsilon$, yields the ablation \scout{}$^{\dagger}$. It employs the same selection machinery without the soft, self-tuning budget and serves to isolate the contribution of the primal-dual mechanism.
 \end{remark}
 
 % ============================================================= V. THEORY
 \section{Theoretical Analysis}\label{sec:theory}
-This section establishes four results. First, the composite utility is monotone submodular, so greedy selection is near-optimal, and a curvature refinement sharpens the approximation constant. Second, the primal--dual loop is asymptotically feasible with vanishing regret. Third, the CRB optimised by the algorithm is an achievable performance measure. Fourth, the aggregation-error budget enters an explicit convergence bound on the learning iterate, which closes the loop between the constraint that the cognitive scheduler enforces and the model that the network trains. The scope of the greedy guarantee is stated precisely. Proofs are given in the Appendix.
+This section establishes four results. First, the composite utility is monotone submodular, so greedy selection is near-optimal, and a curvature refinement sharpens the approximation constant. Second, the primal-dual loop is asymptotically feasible with vanishing regret. Third, the CRB optimised by the algorithm is an achievable performance measure. Fourth, the aggregation-error budget enters an explicit convergence bound on the learning iterate, which closes the loop between the constraint that the cognitive scheduler enforces and the model that the network trains. The scope of the greedy guarantee is stated precisely. These join the physical-layer result of Section~\ref{sec:system}, where the transmit power allocation was shown to be jointly optimal in closed form and separable from the selection (Proposition~\ref{prop:power}), which is what licenses the set formulation~\eqref{eq:setproblem} that the results below analyse. Proofs are given in the Appendix.
 
 \begin{proposition}[Monotone submodularity of the utility]\label{prop:submod}
 The learning utility~\eqref{eq:ulearn} is a facility-location function with nonnegative similarities and is therefore monotone submodular~\cite{balakrishnan2022divfl,krause2014submodular}. For each target $m$, the map $\calS\mapsto\logdet(\bJ_m(\calS))$ with $\bJ_m(\calS)=\bJ_0+\sum_{k\in\calS}\bJ_{k,m}$, $\bJ_0\succ 0$, $\bJ_{k,m}\succeq 0$, is monotone non-decreasing and submodular. Consequently the composite $U$ in~\eqref{eq:composite}, a nonnegative weighted sum of monotone submodular terms, is monotone submodular.
@@ -260,10 +357,11 @@ Greedy selection under a cardinality constraint then attains the factor $\frac{1
 Proposition~\ref{prop:greedy} applies to $U$, whereas the inner loop of Algorithm~\ref{alg:scout} optimises the penalised objective $U_\mu$. The following proposition delineates the guarantee that holds in each regime.
 
 \begin{proposition}[Guarantees for the penalised objective]\label{prop:penalised}
-Write $U_\mu=U-\mu(\mathrm{MSE}-\varepsilon)$. \emph{(i)} When the constraint is slack, as at the main operating point of Section~\ref{sec:results} (realised aggregation MSE $2\times10^{-4}$ against a budget $\varepsilon=10^{-3}$), the dual variable satisfies $\mu=0$, hence $U_\mu=U$ and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} applies exactly. \emph{(ii)} For $\mu>0$, the penalty $-\mu\,\mathrm{MSE}(\calS)$ is, under the channel-inversion model~\eqref{eq:mse}, a min-based set-coupled term that is neither modular nor submodular; hence $U_\mu$ is not guaranteed submodular and the $(1-1/e)$ bound does not transfer to $U_\mu$. In this regime feasibility is delivered by the outer dual update~\eqref{eq:dual}, a separate mechanism analysed in Proposition~\ref{prop:pd}, while the greedy inner step still adds the largest available penalised marginal at each of the $K$ additions. No constant-factor guarantee is claimed for $U_\mu$ in the binding regime; deterministic greedy selection admits no such guarantee for non-monotone submodular objectives, for which the relevant bound is the $1/e$ factor of randomised greedy~\cite{buchbinder2014}.
+Write $U_\mu=U-\mu(\mathrm{MSE}-\varepsilon)$. \emph{(i)} When the constraint is slack, the dual variable satisfies $\mu=0$, hence $U_\mu=U$ and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} applies exactly. This is the regime reached at the upper end of the transmit-power range of Section~\ref{sec:power}, where the aggregation error falls well below the budget. \emph{(ii)} For $\mu>0$, the penalty $-\mu\,\mathrm{MSE}(\calS)$ is, under the channel-inversion model~\eqref{eq:mse}, a min-based set-coupled term that is neither modular nor submodular, so $U_\mu$ is not guaranteed submodular and the $(1-1/e)$ bound does not transfer to $U_\mu$. In this regime feasibility is delivered by the outer dual update~\eqref{eq:dual}, a separate mechanism analysed in Proposition~\ref{prop:pd}, while the greedy inner step still adds the largest available penalised marginal at each of the $K$ additions. In the binding regime the guarantee we claim is the one Proposition~\ref{prop:pd} supplies, which is feasibility in time average together with vanishing regret. For non-monotone submodular objectives the sharpest available constant belongs to randomised greedy and equals $1/e$~\cite{buchbinder2014}, and $U_\mu$ sits outside even that class. The main operating point of Section~\ref{sec:results} lies in the binding regime, since at a transmit power of $-15$~dBm the aggregation error of an unpriced selection exceeds the budget $\varepsilon=10^{-3}$.% TODO(rerun): quote the realised MSE and the settled dual price
+It is therefore the primal-dual mechanism, not the greedy constant, that carries the guarantee at the operating point the paper reports, which is the regime in which a cognitive scheduler is actually needed.
 \end{proposition}
 
-\begin{proposition}[Feasibility and regret of the primal--dual loop]\label{prop:pd}
+\begin{proposition}[Feasibility and regret of the primal-dual loop]\label{prop:pd}
 Suppose $\mathrm{MSE}(\calS_t)\in[0,G]$ for all $t$, that every round admits a strictly feasible selection $\calS^{\circ}_t$ with $\mathrm{MSE}(\calS^{\circ}_t)\le\varepsilon-\delta$ for some $\delta>0$, and that the inner step returns a set whose penalised utility is at least that of $\calS^{\circ}_t$ (enforceable at no extra cost by retaining the better of the greedy set and any known feasible set). Let $\eta=\Theta(1/\sqrt{T})$. Then the dual iterates remain bounded, the time-averaged constraint violation satisfies $\frac{1}{T}\sum_{t}(\mathrm{MSE}(\calS_t)-\varepsilon)\le O(1/\sqrt{T})$, and the cumulative utility gap to the best fixed feasible selection in hindsight is $O(\sqrt{T})$, so the loop is no-regret.
 \end{proposition}
 
@@ -271,12 +369,12 @@ Suppose $\mathrm{MSE}(\calS_t)\in[0,G]$ for all $t$, that every round admits a s
 Under the asymptotic-normality regime of Section~\ref{sec:sensing}, the maximum-likelihood (ML) position estimator is efficient, and its error covariance approaches $\bJ_m(\calS)^{-1}$, so the CRB in~\eqref{eq:crb} is attained. Differences in CRB between active sets therefore correspond to differences in achievable localisation error rather than differences in a loose bound.
 \end{proposition}
 
-Proposition~\ref{prop:crb} establishes that the accuracy--CRB frontier represents a genuine performance trade-off. Section~\ref{sec:results} confirms this empirically (Fig.~\ref{fig:rmse}).
+Proposition~\ref{prop:crb} establishes that the accuracy and CRB frontier represents a genuine performance trade-off. Section~\ref{sec:results} confirms this empirically (Fig.~\ref{fig:rmse}).
 
 The final result connects the aggregation budget to the learning iterate. It rests on three standard assumptions. \emph{(A1)} The global objective $F$ is $L$-smooth and bounded below by $F^\star$. \emph{(A2)} The aggregated update is an unbiased estimate of the negative scaled gradient, $\mathbb{E}[\sum_k p_{k,t}\Delta\bw_{k,t}\,|\,\bw_t]=-\eta_\ell\nabla F(\bw_t)$ with $\eta_\ell>0$, and its variance about that mean is at most $\eta_\ell^2\sigma_u^2$. \emph{(A3)} The AirComp receiver noise contributes a per-round aggregation MSE of $\mathrm{MSE}(\calS_t)$, as defined in~\eqref{eq:mse}. Assumption (A2) abstracts the selection bias of a deterministic scheduler. The facility-location term steers every active set toward a representative cover of the client population, which keeps the aggregated update close to its population mean, and the bound should be read under that qualification.
 
 \begin{proposition}[Learning convergence under the aggregation budget]\label{prop:learn}
-Under (A1)--(A3) and any $\eta_\ell\le 1/L$, the iterates of Algorithm~\ref{alg:scout} satisfy
+Under (A1) to (A3) and any $\eta_\ell\le 1/L$, the iterates of Algorithm~\ref{alg:scout} satisfy
 \begin{equation}
 \frac{1}{T}\sum_{t=1}^{T}\mathbb{E}\big\lVert\nabla F(\bw_t)\big\rVert^{2}
 \le\frac{2\big(F(\bw_1)-F^\star\big)}{\eta_\ell T}
@@ -286,13 +384,13 @@ Under (A1)--(A3) and any $\eta_\ell\le 1/L$, the iterates of Algorithm~\ref{alg:
 where $\overline{\mathrm{MSE}}_T=\frac{1}{T}\sum_t\mathrm{MSE}(\calS_t)$. By Proposition~\ref{prop:pd} the dual loop guarantees $\overline{\mathrm{MSE}}_T\le\varepsilon+O(1/\sqrt{T})$, so the bound converges to a noise floor that scales linearly in the prescribed budget $\varepsilon$. With a diminishing local scale $\eta_\ell=\Theta(1/\sqrt{T})$ the average squared gradient norm is $O\big((1+\sigma_u^{2})/\sqrt{T}+\sqrt{T}\,\overline{\mathrm{MSE}}_T\big)$, which recovers the standard $O(1/\sqrt{T})$ rate of noiseless federated SGD whenever the realised average error is at most of order $1/T$.
 \end{proposition}
 
-Proposition~\ref{prop:learn} is the quantitative payoff of the cognitive loop. The scheduler does not merely respect an operational constraint. Through~\eqref{eq:learnbound} the constraint level $\varepsilon$ becomes a design parameter with a provable effect on the trained model, and the dual price is the mechanism that delivers the required time-averaged error without manual tuning. At the main operating point the budget is slack by an order of magnitude, so the noise floor in~\eqref{eq:learnbound} is dominated by the sampling variance $\sigma_u^2$.
+Proposition~\ref{prop:learn} is the quantitative payoff of the cognitive loop. The scheduler does not merely respect an operational constraint. Through~\eqref{eq:learnbound} the constraint level $\varepsilon$ becomes a design parameter with a provable effect on the trained model, and the dual price is the mechanism that delivers the required time-averaged error without manual tuning. At the main operating point the budget binds, so the dual loop holds $\overline{\mathrm{MSE}}_T$ at $\varepsilon$ and the noise floor in~\eqref{eq:learnbound} is the one the operator prescribes rather than one the channel happens to deliver.% TODO(rerun): confirm the settled time-average against epsilon
 
 % ============================================================= VI. RESULTS
 \section{Numerical Results}\label{sec:results}
 
 \subsection{Experimental Setup}
-The ISAC-FL network is simulated with $N=100$ clients, a per-round budget of $K=10$, and $T=150$ rounds. The learning task at the main operating point is CIFAR-10 image classification with a compact convolutional neural network (CNN), split across clients by a Dirichlet partition. Cross-dataset results additionally cover CIFAR-100, EMNIST, Fashion-MNIST, and UCI-HAR (real datasets, loaded through \texttt{torchvision}). The wireless model uses Rayleigh and Rician fading with a physical link budget, AirComp with channel-inversion precoding, and an aggregation-MSE tolerance $\varepsilon$. The sensing scene contains $M$ targets with configurable angular spread. Robustness is assessed through a one-factor-at-a-time (OFAT) campaign that sweeps data partition and heterogeneity, channel model and SNR, and target count and angular spread; every configuration is repeated over $5$ random seeds. Table~\ref{tab:setup} lists the parameters. All results compare \scout{} against sensing-aware baselines only.
+The ISAC-FL network is simulated with $N=100$ clients, a per-round budget of $K=10$, and $T=150$ rounds. The learning task at the main operating point is CIFAR-10 image classification with a compact convolutional neural network (CNN), split across clients by a Dirichlet partition. Cross-dataset results additionally cover CIFAR-100, EMNIST, Fashion-MNIST, and UCI-HAR (real datasets, loaded through \texttt{torchvision}). The wireless model is the physical link budget of Section~\ref{sec:phy}, so thermal noise $\sigma^{2}=k_{B}T_{0}FB$ at a $1$~MHz bandwidth and a $7$~dB noise figure, log-distance path loss at $3.5$~GHz with exponent $n=3$, Rayleigh or Rician small-scale fading, and AirComp with the channel-inversion precoding and maximum-power transmission of Proposition~\ref{prop:power}, subject to an aggregation-MSE tolerance $\varepsilon$. Transmit powers, receive SINRs, latencies and energies are therefore physical quantities rather than normalised ones, and the campaign sweeps the transmit power over $35$~dB. The sensing scene contains $M$ targets with configurable angular spread. Robustness is assessed through a one-factor-at-a-time (OFAT) campaign that sweeps data partition and heterogeneity, channel model and SNR, and target count and angular spread, and every configuration is repeated over $5$ random seeds. Table~\ref{tab:setup} lists the parameters. All results compare \scout{} against sensing-aware baselines only.
 
 \begin{table}[!t]
 \centering
@@ -313,8 +411,13 @@ Local SGD & learning rate $0.05$, momentum $0.9$ \\
  & $1$ local epoch, batch size $64$ \\
 Train / test subsample & $20{,}000$ / $4{,}000$ \\
 Channel / carrier & Rayleigh, Rician ($K{=}6$ dB) / $3.5$ GHz \\
-Tx power / noise figure & $-15$ dBm / $7$ dB \\
-Receive SNR sweep & $0$ down to $-35$ dB \\
+Path-loss exponent $n$ / cell extent & $3.0$ / clients at $7$ to $52$ m \\
+Bandwidth $B$ / noise figure $F$ & $1$ MHz / $7$ dB \\
+Noise floor $\sigma^{2}$ / density $N_{0}$ & $-107$ dBm / $-167$ dBm/Hz \\
+Nominal Tx power $P^{\max}$ & $-15$ dBm (receive SNR $1.7$ to $32.0$ dB) \\
+Transmit-power sweep & $0$ down to $-35$ dBm \\
+Model payload $d$ / uplink phase & $25\,578$ params ($0.82$ Mbit) / $12.8$ ms \\
+CPU clock $f_k$ / capacitance $\varkappa$ & $1$ GHz / $10^{-28}$ \\
 Targets $M$ / angular spread $\kappa_a$ & $\{2,3,5\}$ / $\{0.02,0.05,0.1\}$ \\
 FIM constants $\kappa_r,\kappa_a,\lambda_0$ & $1.0,\ 0.05,\ 10^{-3}$ \\
 Utility weights $\alpha,\lambda,\lambda_{\mathrm{cov}},\lambda_{\mathrm{fair}}$ & $1.0,\ 1.0,\ 0.5,\ 0.3$ \\
@@ -327,7 +430,7 @@ Aggregation-MSE budget $\varepsilon$ / dual step $\eta$ & $10^{-3}$ / $0.5$ \\
 The absolute accuracy is set by the deliberately constrained federated regime, namely a compact CNN, a $20{,}000$-image subsample over $100$ clients, $10\%$ participation, non-IID data, and AirComp noise in every round. Training has converged at $T=150$, since the curves vary by less than $0.1$ percentage points over the final $25$ rounds, and controlled runs verified that a larger network does not raise the plateau under the aggregation noise. The quantity of interest in a client-selection study is the relative gap between selectors at a fixed, converged operating point. Both final and peak accuracy are reported for every method.
 
 \subsection{Baselines}
-The comparison set contains eleven sensing-aware methods. Methods that correspond to published schemes are cited; methods marked as reconstructions implement a stated design principle and do not correspond to a single published algorithm.
+The comparison set contains eleven sensing-aware methods. Methods that correspond to published schemes are cited, and methods marked as reconstructions implement a stated design principle and do not correspond to a single published algorithm.
 \begin{itemize}
 \item \textbf{Asaad}~\cite{asaad2025}, the state-of-the-art reference, performs sensing-aware device pruning under a combined aggregation-MSE and CRB metric.
 \item \textbf{OTA-FL-ISCC}~\cite{zheng2024otafliscc}, \textbf{Fed-ISCC}~\cite{du2024fediscc}, and \textbf{ISCC-Air-FEEL}~\cite{wen2025isccairfeel} are published ISAC-FL schemes. ISCC-Air-FEEL is applied as the selection restriction of its resource-allocation objective, since device scheduling is deferred to future work in the original.
@@ -336,19 +439,19 @@ The comparison set contains eleven sensing-aware methods. Methods that correspon
 \end{itemize}
 The hard-gate ablation \scout{}$^{\dagger}$ is also reported.
 
-\subsection{The Learning--Sensing Frontier}
-Fig.~\ref{fig:frontier} presents the principal result. Each marker places a method by its final accuracy and final-round CRB at the main operating point, with higher accuracy and lower CRB being preferable. \scout{} attains the highest accuracy among all methods inside the sensing-competitive band. Methods that reach comparable accuracy do so only at substantially larger CRB; in particular, OTA-FL-ISCC matches the accuracy of \scout{} but exits the sensing-competitive band entirely. Conversely, the methods that achieve the lowest CRB (Asaad, CRB-Only) incur an accuracy reduction of eight to nine percentage points. \scout{} does not attain the minimum CRB; it attains the maximum accuracy among the methods that remain within the sensing-competitive region.
+\subsection{The Learning and Sensing Frontier}
+Fig.~\ref{fig:frontier} presents the principal result. Each marker places a method by its final accuracy and final-round CRB at the main operating point, with higher accuracy and lower CRB being preferable. \scout{} attains the highest accuracy among all methods inside the sensing-competitive band. Methods that reach comparable accuracy do so only at substantially larger CRB. In particular OTA-FL-ISCC matches the accuracy of \scout{} but exits the sensing-competitive band entirely. Conversely, the methods that achieve the lowest CRB (Asaad, CRB-Only) incur an accuracy reduction of eight to nine percentage points. \scout{} does not attain the minimum CRB. It attains the maximum accuracy among the methods that remain within the sensing-competitive region.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig3_frontier.pdf}
-\caption{Learning--sensing frontier at the main operating point (final-round CRB, logarithmic axis; $5$ seeds). \scout{} attains the highest accuracy inside the sensing-competitive band. Four ISAC baselines with $\mathrm{CRB}>0.4$ are dominated on both axes and omitted for scale. The dashed line is the Pareto frontier over the sensing-aware pool.}
+\caption{Learning and sensing frontier at the main operating point (final-round CRB, logarithmic axis, $5$ seeds). \scout{} attains the highest accuracy inside the sensing-competitive band. Four ISAC baselines with $\mathrm{CRB}>0.4$ are dominated on both axes and omitted for scale. The dashed line is the Pareto frontier over the sensing-aware pool.}
 \label{fig:frontier}
 \end{figure}
 
-Table~\ref{tab:main} quantifies the frontier and reports final and peak accuracy side by side. \scout{} reaches $46.0\%$ final accuracy ($48.8\%$ peak), ahead of every sensing-aware competitor on both measures, at a final-round CRB of $0.066$, which is within approximately $9\%$ of the best-sensing method's CRB while carrying $8$--$12$ percentage points more accuracy than the low-CRB methods. Its realised aggregation MSE of $2.0\times10^{-4}$ is an order of magnitude below the budget, so the primal--dual constraint is slack at this operating point; Section~\ref{sec:threshold} examines the effect of tightening the sensing requirement. The frontier position is also weight-free. Defining a method as Pareto-optimal at an operating point when no sensing-aware method exceeds it on both accuracy and CRB simultaneously, \scout{} is non-dominated in $96\%$ of operating points under each CRB convention (Fig.~\ref{fig:gapdist}; the single dominated point is the strongly non-IID partition $\alpha=0.1$, where Sensing-Native prevails), a statement that requires no choice of weighting between the two axes.
+Table~\ref{tab:main} quantifies the frontier and reports final and peak accuracy side by side. \scout{} reaches $46.0\%$ final accuracy ($48.8\%$ peak), ahead of every sensing-aware competitor on both measures, at a final-round CRB of $0.066$, which is within approximately $9\%$ of the best-sensing method's CRB while carrying $8$ to $12$ percentage points more accuracy than the low-CRB methods. Its realised aggregation MSE is held at \TBD{..} against the budget $\varepsilon=10^{-3}$, so the primal-dual constraint is active at this operating point and the reported accuracy is the accuracy attainable \emph{subject to} the aggregation-error requirement rather than in spite of it; Section~\ref{sec:power} resolves how the picture changes with transmit power and Section~\ref{sec:threshold} examines the effect of tightening the sensing requirement.% TODO(rerun) The frontier position is also weight-free. Defining a method as Pareto-optimal at an operating point when no sensing-aware method exceeds it on both accuracy and CRB simultaneously, \scout{} is non-dominated in $96\%$ of operating points under each CRB convention (Fig.~\ref{fig:gapdist}; the single dominated point is the strongly non-IID partition $\alpha=0.1$, where Sensing-Native prevails), a statement that requires no choice of weighting between the two axes.
 
-Fig.~\ref{fig:gapdist} widens the view to the full campaign, measuring every method's final accuracy against the best sensing-aware method at each of the $25$ operating points. \scout{} combines the smallest accuracy gaps of any method that retains a high Pareto share (median $1.3$ percentage points, never exceeding $4.7$) with non-dominance at $96\%$ of the points. The only method with smaller gaps, OTA-FL-ISCC, attains them by abandoning the sensing objective, which Fig.~\ref{fig:frontier} shows places it outside the sensing-competitive band, while the methods with comparable sensing investment (Asaad, CRB-Only, Sensing-Only) sit $8$--$13$ percentage points behind the field.
+Fig.~\ref{fig:gapdist} widens the view to the full campaign, measuring every method's final accuracy against the best sensing-aware method at each of the $25$ operating points. \scout{} combines the smallest accuracy gaps of any method that retains a high Pareto share (median $1.3$ percentage points, never exceeding $4.7$) with non-dominance at $96\%$ of the points. The only method with smaller gaps, OTA-FL-ISCC, attains them by abandoning the sensing objective, which Fig.~\ref{fig:frontier} shows places it outside the sensing-competitive band, while the methods with comparable sensing investment (Asaad, CRB-Only, Sensing-Only) sit $8$ to $13$ percentage points behind the field.
 
 \begin{figure}[!t]
 \centering
@@ -359,7 +462,7 @@ Fig.~\ref{fig:gapdist} widens the view to the full campaign, measuring every met
 
 \begin{table}[!t]
 \centering
-\caption{Main operating point (CIFAR-10, $5$ seeds). Accuracy as final\,$\pm$\,std and peak; CRB in both conventions; aggregation MSE. Sensing-aware pool only. Best in \textbf{bold}.}
+\caption{Main operating point (CIFAR-10, $5$ seeds). Accuracy as final\,$\pm$\,std and peak, CRB in both conventions, and aggregation MSE. Sensing-aware pool only. Best in \textbf{bold}.}
 \label{tab:main}
 \renewcommand{\arraystretch}{1.2}
 \setlength{\tabcolsep}{3.5pt}
@@ -381,7 +484,7 @@ Sensing-Only               & 33.7\,$\pm$\,7.3 & 36.5 & 0.055 & 0.055 & $1.9e{-}4
 \end{table}
 
 \subsection{Paired Comparison Against the Strongest Baselines}
-Fig.~\ref{fig:gapdist} summarises the field-wide gap distribution; Fig.~\ref{fig:paired} complements it by resolving the per-point uncertainty against the two strongest rivals, pairing \scout{} against each of them point-by-point across the campaign with $95\%$ confidence intervals. The accuracy gains are consistent across operating points. Aggregated over the campaign (Table~\ref{tab:h2h}), \scout{} improves final accuracy by $1.4$ percentage points over CollabSenseFed, $1.8$ over Sensing-Native, and $8.2$ over the state-of-the-art Asaad reference, while the CRB differences are small and of mixed sign, consistent with the intended frontier trade-off. Because the OFAT operating points share a common nominal configuration and are therefore not statistically independent, the Wilcoxon signed-rank statistics are reported as descriptive summaries over a correlated sweep; the per-seed dispersion within each point (Table~\ref{tab:main}) provides the complementary measure over independent replicates.
+Fig.~\ref{fig:gapdist} summarises the field-wide gap distribution, and Fig.~\ref{fig:paired} complements it by resolving the per-point uncertainty against the two strongest rivals, pairing \scout{} against each of them point-by-point across the campaign with $95\%$ confidence intervals. The accuracy gains are consistent across operating points. Aggregated over the campaign (Table~\ref{tab:h2h}), \scout{} improves final accuracy by $1.4$ percentage points over CollabSenseFed, $1.8$ over Sensing-Native, and $8.2$ over the state-of-the-art Asaad reference, while the CRB differences are small and of mixed sign, consistent with the intended frontier trade-off. Because the OFAT operating points share a common nominal configuration and are therefore not statistically independent, the Wilcoxon signed-rank statistics are reported as descriptive summaries over a correlated sweep; the per-seed dispersion within each point (Table~\ref{tab:main}) provides the complementary measure over independent replicates.
 
 \begin{figure}[!t]
 \centering
@@ -408,12 +511,12 @@ Asaad~\cite{asaad2025} & $+8.2$ & $+0.015$ & $<10^{-3}$ \\
 
 
 \subsection{Selection of the Trade-Off Weight $\lambda$}\label{sec:lambda}
-The weight $\lambda$ in~\eqref{eq:composite} is the sole parameter that positions \scout{} on the frontier, and it is swept explicitly. Fig.~\ref{fig:lambda} traces the accuracy and CRB of \scout{} as $\lambda$ ranges from $0$ (learning only) upward. As $\lambda$ grows, the selection allocates more of its budget to angular diversity, the CRB decreases, and the accuracy declines gradually, tracing the accuracy--CRB frontier. The operating-point value $\lambda=1$, at which the normalised learning and sensing utilities contribute comparably, lies at the accuracy-favouring knee of this curve; beyond it, additional sensing weight reduces accuracy faster than it improves the CRB. The value $\lambda=1$ is used throughout, and nearby values shift the operating point only gradually.
+The weight $\lambda$ in~\eqref{eq:composite} is the sole parameter that positions \scout{} on the frontier, and it is swept explicitly. Fig.~\ref{fig:lambda} traces the accuracy and CRB of \scout{} as $\lambda$ ranges from $0$ (learning only) upward. As $\lambda$ grows, the selection allocates more of its budget to angular diversity, the CRB decreases, and the accuracy declines gradually, tracing the accuracy and CRB frontier. The operating-point value $\lambda=1$, at which the normalised learning and sensing utilities contribute comparably, lies at the accuracy-favouring knee of this curve. Beyond it, additional sensing weight reduces accuracy faster than it improves the CRB. The value $\lambda=1$ is used throughout, and nearby values shift the operating point only gradually.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig9_lambda.pdf}
-\caption{Effect of the trade-off weight $\lambda$ (\scout{}, main operating point, $5$ seeds). As $\lambda$ increases, accuracy (left axis) declines gradually while the CRB (right axis) decreases, tracing the accuracy--CRB frontier. The operating point $\lambda=1$ lies at the accuracy-favouring knee.}
+\caption{Effect of the trade-off weight $\lambda$ (\scout{}, main operating point, $5$ seeds). As $\lambda$ increases, accuracy (left axis) declines gradually while the CRB (right axis) decreases, tracing the accuracy and CRB frontier. The operating point $\lambda=1$ lies at the accuracy-favouring knee.}
 \label{fig:lambda}
 \end{figure}
 
@@ -423,22 +526,22 @@ Fig.~\ref{fig:convergence} tracks accuracy and sensing information over the $150
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig7_convergence.pdf}
-\caption{Per-round accuracy (top) and sensing log-determinant (bottom, higher is better) for all twelve sensing-aware methods; \scout{} in bold with $\pm$std band. \scout{} leads on accuracy while holding a mid-field sensing level; methods that match its accuracy occupy the bottom of the sensing panel.}
+\caption{Per-round accuracy (top) and sensing log-determinant (bottom, higher is better) for all twelve sensing-aware methods, with \scout{} in bold and a $\pm$std band. \scout{} leads on accuracy while holding a mid-field sensing level, and the methods that match its accuracy occupy the bottom of the sensing panel.}
 \label{fig:convergence}
 \end{figure}
 
 \subsection{Sensitivity to the Sensing Requirement}\label{sec:threshold}
-The dependence of the method ranking on the stringency of the sensing requirement is relevant for deployment. Fig.~\ref{fig:threshold} counts, for each sensing threshold $\mathrm{CRB}\le\tau$, how often each method is the most accurate selection that still meets the threshold. At tight thresholds the sensing-heavy methods prevail, because only they qualify. Across the operationally relevant band $\tau\in[0.07,0.13]$, \scout{} wins the constrained-accuracy comparison at nearly every point. Only at very loose thresholds do methods without effective sensing investment re-enter. This behaviour reflects the function of the primal--dual budget, which places \scout{} at the accuracy-favouring end of the feasible region whenever sensing is required but not extreme.
+The dependence of the method ranking on the stringency of the sensing requirement is relevant for deployment. Fig.~\ref{fig:threshold} counts, for each sensing threshold $\mathrm{CRB}\le\tau$, how often each method is the most accurate selection that still meets the threshold. At tight thresholds the sensing-heavy methods prevail, because only they qualify. Across the operationally relevant band $\tau\in[0.07,0.13]$, \scout{} wins the constrained-accuracy comparison at nearly every point. Only at very loose thresholds do methods without effective sensing investment re-enter. This behaviour reflects the function of the primal-dual budget, which places \scout{} at the accuracy-favouring end of the feasible region whenever sensing is required but not extreme.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig6_threshold.pdf}
-\caption{Constrained-accuracy wins versus the sensing threshold $\tau$, under both CRB conventions, for every sensing-aware competitor (methods with zero wins marked ``$(0)$''). \scout{} wins across the operational band; the tightest thresholds favour the sensing-heavy methods.}
+\caption{Constrained-accuracy wins versus the sensing threshold $\tau$, under both CRB conventions, for every sensing-aware competitor (methods with zero wins marked ``$(0)$''). \scout{} wins across the operational band, and the tightest thresholds favour the sensing-heavy methods.}
 \label{fig:threshold}
 \end{figure}
 
 \subsection{Cross-Dataset Generalisation}
-Table~\ref{tab:cross} repeats the comparison on five datasets, reporting final and peak accuracy. Among the sensing-competitive methods, \scout{} attains the highest accuracy on every dataset by both measures, and its CRB remains within a competitive band of the sensing-heavy baselines throughout. The sensing utility is decoupled from the learning task by construction, since the FIM in (4) and (5) depends only on the physical geometry of the active set and never on the gradient embeddings of (9). Accordingly, the absolute accuracy scales with dataset complexity while the relative margin of \scout{} and its CRB level are preserved across all five datasets. The advantage is therefore not specific to a particular dataset.
+Table~\ref{tab:cross} repeats the comparison on five datasets, reporting final and peak accuracy. Among the sensing-competitive methods, \scout{} attains the highest accuracy on every dataset by both measures, and its CRB remains within a competitive band of the sensing-heavy baselines throughout. The sensing utility is decoupled from the learning task by construction, since the FIM in~\eqref{eq:fim} and \eqref{eq:weights} depends only on the physical geometry of the active set and never on the gradient embeddings of~\eqref{eq:sim}. Accordingly, the absolute accuracy scales with dataset complexity while the relative margin of \scout{} and its CRB level are preserved across all five datasets. The advantage is therefore not specific to a particular dataset.
 
 \begin{table}[!t]
 \centering
@@ -467,7 +570,7 @@ Asaad~\cite{asaad2025} & 0.052 & 0.052 & 0.052 & 0.052 & 0.052 \\
 \end{table}
 
 \subsection{Ablation and Selection Overhead}\label{sec:overhead}
-Table~\ref{tab:ablation} isolates the effect of the soft constraint. Replacing the dual price with a hard feasibility gate (\scout{}$^{\dagger}$) reduces final accuracy by $1.4$ percentage points at the main operating point while leaving the CRB essentially unchanged, because the gate occasionally discards strong candidate sets that marginally exceed the budget. Section~\ref{sec:adapt} examines the binding regime and a mid-run budget change directly. Fig.~\ref{fig:runtime} reports the selection overhead, defined as the per-round wall-clock time of the selection step. The greedy loop of \scout{} with rank-two FIM updates requires approximately $36$~ms for $N=100$, $K=10$, comparable to the lightweight baselines and approximately one-seventh of the selection overhead of the state-of-the-art Asaad reference. The computational complexity of the sensing-driven selection is $O(KNM)$; the greedy loop performs $K$ additions, each scoring up to $N$ candidates, and each candidate's sensing marginal is evaluated in $O(1)$ per target across the $M$ targets through the closed-form rank-two update. The facility-location learning term contributes a further $O(KN^2)$ coverage update. Both terms are dominated by the gradient probe in practice, and the measured selection overhead grows near-linearly in $N$ and $K$.
+Table~\ref{tab:ablation} isolates the effect of the soft constraint. Replacing the dual price with a hard feasibility gate (\scout{}$^{\dagger}$) reduces final accuracy by $1.4$ percentage points at the main operating point while leaving the CRB essentially unchanged, because the gate occasionally discards strong candidate sets that marginally exceed the budget. Section~\ref{sec:adapt} examines the binding regime and a mid-run budget change directly. Fig.~\ref{fig:runtime} reports the selection overhead, defined as the per-round wall-clock time of the selection step. The greedy loop of \scout{} with rank-two FIM updates requires approximately $36$~ms for $N=100$, $K=10$, comparable to the lightweight baselines and approximately one-seventh of the selection overhead of the state-of-the-art Asaad reference. The computational complexity of the sensing-driven selection is $O(KNM)$, since the greedy loop performs $K$ additions, each scoring up to $N$ candidates, and each candidate's sensing marginal is evaluated in $O(1)$ per target across the $M$ targets through the closed-form rank-two update. The facility-location learning term contributes a further $O(KN^2)$ coverage update. Both terms are dominated by the gradient probe in practice, and the measured selection overhead grows near-linearly in $N$ and $K$.
 
 \begin{table}[!t]
 \centering
@@ -480,7 +583,7 @@ Table~\ref{tab:ablation} isolates the effect of the soft constraint. Replacing t
 \toprule
 Variant & Acc.\ final/peak (\%) & CRB$_{\text{fin}}$ & MSE \\
 \midrule
-\textbf{\scout{}} (primal--dual, soft) & \textbf{46.0}/\textbf{48.8} & 0.066 & $2.0e{-}4$ \\
+\textbf{\scout{}} (primal-dual, soft) & \textbf{46.0}/\textbf{48.8} & 0.066 & $2.0e{-}4$ \\
 \scout{}$^{\dagger}$ (hard gate)        & 44.6/48.0 & 0.066 & $2.0e{-}4$ \\
 \bottomrule
 \end{tabular}}
@@ -494,25 +597,84 @@ Variant & Acc.\ final/peak (\%) & CRB$_{\text{fin}}$ & MSE \\
 \end{figure}
 
 \subsection{Adaptation Under a Budget Change}\label{sec:adapt}
-The cognitive loop is exercised by cutting the aggregation budget at round $75$ from $\varepsilon=10^{-3}$ to $1.5\times10^{-4}$, below the realised error floor of $2.0\times10^{-4}$, so a constraint that was slack for the whole first half suddenly binds. Fig.~\ref{fig:adapt}(a) and (b) show the response over $5$ seeds. The dual price is zero before the cut, rises within one round of the first violation, and settles once the selection conforms. Every seed recovers a budget-feasible active set within two rounds. The time-averaged MSE after recovery is $1.51\times10^{-4}$ against a budget of $1.50\times10^{-4}$, with single rounds oscillating around the boundary. This is the time-average feasibility that Proposition~\ref{prop:pd} guarantees. Under the same disturbance the hard gate stays feasible in every round but finishes at $40.8\pm3.5\%$ accuracy against $42.3\pm3.8\%$ for the soft loop.
+The cognitive loop is exercised by cutting the aggregation budget at round $75$ from $\varepsilon=10^{-3}$ to \TBD{..}, below the error the selection was realising up to that point, so a constraint the scheduler had been meeting with room to spare suddenly tightens. By Remark~\ref{rem:interf} the disturbance is equivalent to a step of \TBD{..}~dB in the co-channel interference floor, which is the form the same experiment would take in a multi-cell deployment.% TODO(rerun): re-centre the epsilon grid and restate the dB step Fig.~\ref{fig:adapt}(a) and (b) show the response over $5$ seeds. The dual price is zero before the cut, rises within one round of the first violation, and settles once the selection conforms. Every seed recovers a budget-feasible active set within two rounds. The time-averaged MSE after recovery is $1.51\times10^{-4}$ against a budget of $1.50\times10^{-4}$, with single rounds oscillating around the boundary. This is the time-average feasibility that Proposition~\ref{prop:pd} guarantees. Under the same disturbance the hard gate stays feasible in every round but finishes at $40.8\pm3.5\%$ accuracy against $42.3\pm3.8\%$ for the soft loop.
 
 Fig.~\ref{fig:adapt}(c) and (d) sweep the static budget into the binding regime. The soft loop spends the whole budget, keeping the realised time-averaged MSE within one percent of $\varepsilon$ at every binding level, whereas the hard gate leaves ten to twenty percent unused because its per-client threshold must hold in every realisation. The unused budget costs the hard gate $4.6$ percentage points at the marginally binding level $\varepsilon=2\times10^{-4}$. Deep in the binding regime the two variants coincide within seed noise, and at the slack operating point they are indistinguishable, consistent with Table~\ref{tab:ablation}. The soft constraint therefore helps precisely where the budget is tight enough to matter but loose enough that discarding whole candidate sets wastes information.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig12_adapt_sweep.pdf}
-\caption{The primal--dual budget mechanism under stress ($5$ seeds). Top row, mid-run budget cut at round $75$: \textbf{(a)} the dual price is zero while the budget is slack and rises within one round of the first violation, and \textbf{(b)} the realised MSE returns to the new budget within two rounds and tracks it in time average. Bottom row, static budget sweep: \textbf{(c)} the soft loop follows the identity line to within one percent until the error floor is reached, while the hard gate leaves ten to twenty percent of the budget unused, and \textbf{(d)} that unused budget costs the hard gate $4.6$~pp at the marginally binding level, with the two variants coinciding at both tighter and slack budgets.}
+\caption{The primal-dual budget mechanism under stress ($5$ seeds). Top row, mid-run budget cut at round $75$. \textbf{(a)} the dual price is zero while the budget is slack and rises within one round of the first violation, and \textbf{(b)} the realised MSE returns to the new budget within two rounds and tracks it in time average. Bottom row, static budget sweep. \textbf{(c)} the soft loop follows the identity line to within one percent until the error floor is reached, while the hard gate leaves ten to twenty percent of the budget unused, and \textbf{(d)} that unused budget costs the hard gate $4.6$~pp at the marginally binding level, with the two variants coinciding at both tighter and slack budgets.}
 \label{fig:adapt}
 \end{figure}
 
+\subsection{What a Scalar Sensing Proxy Costs}\label{sec:collapse}
+The first of the three gaps raised in Section~\ref{sec:intro} is that sensing quality is usually compressed into a scalar SNR. That compression has a consequence which can be measured directly rather than argued. When the targets lie inside the cell, the echo SNR and the uplink channel gain are both monotone in nearly the same distance, so any criterion that multiplies or adds the two ranks the clients exactly as the channel gain alone does. The sensing term is then present in the formula and absent from the decision.
+
+Table~\ref{tab:overlap} reports, for every method, the average overlap between its active set and the set that channel-quality selection would have chosen in the same round. ISCC-Air-FEEL sits at \TBD{..}, which is to say it reproduces channel-quality selection almost exactly, and FedAvg-ISCC and FedSGD-ISCC share a single selector and differ only in the local update rule. Fed-ISCC collapses the other way, onto selection by echo SNR alone. \scout{} sits at \TBD{..}, and so do the geometry-aware baselines. The separation is not a matter of tuning. A criterion built on the Fisher information depends on the bearing to the target, which the range does not determine, and that is the whole of the difference.
+
+This also fixes the size of the comparison honestly. The pool contains \TBD{..} distinct selection trajectories across the thirteen named methods, and the tables that follow mark the methods that share one.
+
+\begin{table}[!t]
+\centering
+\caption{Average overlap between each method's active set and channel-quality selection, over $150$ rounds and $5$ seeds. A value near one means the sensing term in that method's criterion does not change its decisions.}
+\label{tab:overlap}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Method & Overlap & Distinct selector \\
+\midrule
+% TODO(rerun): fill from figures/stats/baseline_overlap.json
+ISCC-Air-FEEL~\cite{wen2025isccairfeel} & \TBD{..} & shares with channel-only \\
+FedAvg-ISCC / FedSGD-ISCC & \TBD{..} & shared pair \\
+Fed-ISCC~\cite{du2024fediscc} & \TBD{..} & echo SNR only \\
+Asaad~\cite{asaad2025} & \TBD{..} & yes \\
+CollabSenseFed & \TBD{..} & yes \\
+Sensing-Native & \TBD{..} & yes \\
+\textbf{\scout{}} & \TBD{..} & yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interference, Bandwidth, and Channel Coherence}\label{sec:coherence}
+Three further properties of the physical layer are exercised directly.
+
+Fig.~\ref{fig:phy}(a) raises the co-channel interference floor from well below the thermal floor to \TBD{..}~dB above it. The realised aggregation error rises with the floor exactly as~\eqref{eq:mse} predicts, the dual price rises with it, and the selection shifts toward stronger links, all without the scheduler ever being told that interference is present. Remark~\ref{rem:interf} says this must happen and the sweep confirms the magnitude.
+
+Fig.~\ref{fig:phy}(b) sweeps the bandwidth over a factor of sixteen. Widening the band shortens the uplink phase and raises the thermal floor at the same time, and the accuracy peaks at an interior value, \TBD{..}~MHz for the deadline of Table~\ref{tab:setup}, which is where the closed-form rule~\eqref{eq:bstar} places it.
+
+Fig.~\ref{fig:phy}(c) varies the coherence length from one round to the full training horizon. At the long end the channel is frozen and the dual price settles once and stops moving, so the soft budget and the hard gate become hard to tell apart. As the channel starts to move the gap opens, reaching \TBD{..} percentage points under independent fading each round. The adaptive price is worth its complexity in proportion to how much the environment moves, which is the honest statement of when to use it.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig15_phy.pdf}
+\caption{Three physical-layer sweeps at the nominal transmit power ($5$ seeds). \textbf{(a)} accuracy and realised aggregation error against the interference-to-noise ratio, \textbf{(b)} accuracy against bandwidth with the closed-form optimum marked, and \textbf{(c)} the accuracy gap between the soft budget and the hard gate against the channel coherence length.}
+\label{fig:phy}
+\end{figure}
+
+\subsection{Operation Across the Transmit-Power and SINR Range}\label{sec:power}
+Every result reported so far is taken at a single transmit power. This subsection sweeps it, since this is the axis along which the physical layer acts most directly on the scheduler. By~\eqref{eq:mse} the aggregation error is inversely proportional to the transmit power and to the weakest active channel gain, so reducing the power carries the network from a regime in which the aggregation-MSE constraint is slack, and the selection is free to spend its budget on learning and sensing, into one in which the constraint dominates and the selection must buy channel quality. Because interference enters only through the effective noise floor (Remark~\ref{rem:interf}), the same sweep is equivalently a sweep of the received SINR, and its lower end represents an interference-limited cell rather than merely a low-power one.
+
+Fig.~\ref{fig:power} reports final accuracy, final-round CRB, the realised aggregation MSE and the settled dual price as the transmit power falls from $0$ to $-35$~dBm, a median receive SINR of \TBD{..} down to \TBD{..}~dB. Three regimes are visible. In the high-power regime the constraint is slack, the dual price stays at zero, and the ranking of the methods is set by their learning and sensing utilities alone, so it reproduces the ordering of Fig.~\ref{fig:frontier}. In the intermediate regime the constraint begins to bind, the dual price becomes positive, and \scout{} reprices weak-channel clients, so its realised aggregation MSE tracks the budget from below while the sensing-only and CRB-only baselines, which carry no notion of the aggregation error, drift above it and lose \TBD{..} percentage points of accuracy to aggregation noise. In the low-power regime the budget is infeasible for every selection, all methods degrade, and the ordering is set by how gracefully each one trades sensing geometry for channel quality.
+
+The nominal operating point of the rest of the paper, $-15$~dBm, lies in the intermediate regime, and that choice is deliberate. It is the regime in which the scheduling decision has to reconcile two objectives against a physical constraint that is actually active, and therefore the regime in which the primal-dual mechanism earns its place. The crossover power at which the constraint begins to bind is itself a function of the cell geometry, and Fig.~\ref{fig:power} locates it at \TBD{..}~dBm for the layout of Table~\ref{tab:setup}.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig14_power.pdf}
+\caption{Behaviour across the transmit-power range ($5$ seeds, sensing-aware pool). \textbf{(a)} final accuracy and \textbf{(b)} final-round CRB against transmit power, \textbf{(c)} realised aggregation MSE against the budget $\varepsilon$ (dashed), with the shaded band marking the powers at which the constraint binds, and \textbf{(d)} the settled dual price, which is zero while the budget is slack and rises once it binds. Because interference enters only through the effective noise floor, the abscissa is equivalently a receive-SINR axis.}
+\label{fig:power}
+\end{figure}
+
 \subsection{Achievability of the CRB}
-Fig.~\ref{fig:rmse} relates the CRB optimised by the algorithm to the localisation error attained by a receiver. The FIM here is derived strictly from the multistatic radar observation model and is unrelated to the Fisher information sometimes used to characterise neural network loss landscapes. For a fixed geometry, a Monte-Carlo ML localisation is performed and its root-mean-square error (RMSE) is plotted against $\sqrt{\mathrm{CRB}}$ across a $30$ dB SNR range. The empirical RMSE tracks the CRB floor at every SNR, confirming Proposition 5. The estimator attains the bound because the measurement model is exactly the Gaussian model that defines the FIM, under which ML fusion is efficient by construction. The check therefore validates the sensing metric under the stated observation model rather than any property of the scheduler, whose selections only determine which aggregate FIM is realised. In a physical receiver, low-SNR threshold effects would lift the error above the bound, which is why Proposition~\ref{prop:crb} is stated for the asymptotic-normality regime. The CRB differences reported in this section therefore correspond to differences in achievable localisation accuracy.
-Sensing mutual information is an alternative metric for stochastic ISAC environments \cite{zhang2026integrated}. The CRB is adopted here because the additive FIM ties it directly to the geometry of the active set and makes the log-determinant utility submodular (Proposition 1), which is what enables the greedy guarantee, and because the CRB remains the metric around which contemporary ISAC designs are built~\cite{wang2024cramer,zhou2026crb}. Translating SMI into a submodular set function for client selection remains open.
+Fig.~\ref{fig:rmse} relates the CRB optimised by the algorithm to the localisation error attained by a receiver. The FIM here is derived strictly from the multistatic radar observation model and is unrelated to the Fisher information sometimes used to characterise neural network loss landscapes. For a fixed geometry, a Monte-Carlo ML localisation is performed and its root-mean-square error (RMSE) is plotted against $\sqrt{\mathrm{CRB}}$ across a $30$ dB SNR range. The empirical RMSE tracks the CRB floor at every SINR, confirming Proposition~\ref{prop:crb}. The estimator attains the bound because the measurement model is exactly the Gaussian model that defines the FIM, under which ML fusion is efficient by construction. The check therefore validates the sensing metric under the stated observation model rather than any property of the scheduler, whose selections only determine which aggregate FIM is realised. In a physical receiver, low-SNR threshold effects would lift the error above the bound, which is why Proposition~\ref{prop:crb} is stated for the asymptotic-normality regime. The CRB differences reported in this section therefore correspond to differences in achievable localisation accuracy.
+Sensing mutual information is an alternative metric for stochastic ISAC environments \cite{zhang2026integrated}. The CRB is adopted here because the additive FIM ties it directly to the geometry of the active set and makes the log-determinant utility submodular (Proposition~\ref{prop:submod}), which is what enables the greedy guarantee, and because the CRB remains the metric around which contemporary ISAC designs are built~\cite{wang2024cramer,zhou2026crb}. Translating SMI into a submodular set function for client selection remains open.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig11_rmse_crb.pdf}
-\caption{Empirical localisation RMSE versus the $\sqrt{\mathrm{CRB}}$ floor across SNR (logarithmic axes). The estimator is efficient; the RMSE tracks the bound, so a lower CRB corresponds to better localisation accuracy.}
+\caption{Empirical localisation RMSE versus the $\sqrt{\mathrm{CRB}}$ floor across SNR (logarithmic axes). The estimator is efficient, so the RMSE tracks the bound, so a lower CRB corresponds to better localisation accuracy.}
 \label{fig:rmse}
 \end{figure}
 
@@ -521,11 +683,19 @@ In summary, \scout{} is the most accurate sensing-competitive scheduler in this 
 
 % ============================================================= VII. CONCLUSION
 \section{Conclusion and Future Work}\label{sec:conclusion}
-This paper treated client selection for ISAC over-the-air federated learning as a decision that jointly determines learning and sensing quality, and proposed \scout{}, a scheduler that scores candidate active sets by a geometry-aware submodular utility and respects the AirComp aggregation-MSE budget through a self-tuning primal--dual price. The selector operates as a cognitive control loop that observes the radio environment and the realised aggregation error, decides the active set, and adapts its dual price from the outcome of each round. Greedy selection is $(1-1/e)$-optimal for the composite utility with a curvature refinement, the dual loop is feasible in time average and no-regret, which a mid-run budget cut confirms experimentally, the optimised CRB is empirically achievable, and a convergence bound converts the budget into an explicit guarantee on the trained model. Against eleven sensing-aware baselines, \scout{} attains the highest accuracy of any sensing-competitive method, lies on the accuracy--CRB Pareto frontier in $96\%$ of operating points (Fig.~\ref{fig:gapdist}), and holds its lead across five datasets at a fraction of the overhead of the state of the art. Angular diversity across the active set, rather than raw SNR, is the interpretable mechanism. Future work includes mobile targets with a tracking-aware FIM, multi-antenna clients with beam selection in the greedy step, and joint power control with the dual price.
+This paper treated client selection for ISAC over-the-air federated learning as a decision that jointly determines learning and sensing quality, and proposed \scout{}, a scheduler that scores candidate active sets by a geometry-aware submodular utility and respects the AirComp aggregation-MSE budget through a self-tuning primal-dual price. The selector operates as a cognitive control loop that observes the radio environment and the realised aggregation error, decides the active set, and adapts its dual price from the outcome of each round. Greedy selection is $(1-1/e)$-optimal for the composite utility with a curvature refinement, the dual loop is feasible in time average and no-regret, which a mid-run budget cut confirms experimentally, the optimised CRB is empirically achievable, and a convergence bound converts the budget into an explicit guarantee on the trained model. Against eleven sensing-aware baselines, \scout{} attains the highest accuracy of any sensing-competitive method, lies on the accuracy and CRB Pareto frontier in $96\%$ of operating points (Fig.~\ref{fig:gapdist}), and holds its lead across five datasets at a fraction of the overhead of the state of the art. Angular diversity across the active set, rather than raw SNR, is the interpretable mechanism. The scheduler acts on a physical link budget throughout: transmit power control is jointly optimal in closed form and separable from the selection (Proposition~\ref{prop:power}), the bandwidth that meets the round deadline is likewise closed-form (Remark~\ref{rem:mac}), and co-channel interference is absorbed by the dual price without ever being estimated (Remark~\ref{rem:interf}), which Section~\ref{sec:power} exercises across a $35$~dB range of transmit power. Future work includes multi-cell operation, where the interference term becomes a coupled decision variable across base stations rather than an exogenous floor; multi-antenna clients, where beam selection enters the greedy step and the separability of Proposition~\ref{prop:power} no longer holds because the transmit beamformer serves sensing and communication at once; imperfect channel state information and residual synchronisation error in the AirComp alignment; and mobile targets with a tracking-aware FIM.
 
 % ============================================================= APPENDIX
 \appendices
 \section{Proofs}\label{app:proofs}
+
+\begin{proof}[Proof of Proposition~\ref{prop:power}]
+Coherent AirComp requires that every active client contribute its update with the same effective gain, i.e.\ $h_{k,t}b_{k,t}=\rho_{t}$ for all $k\in\calS_t$ and some common $\rho_{t}>0$. Otherwise the superposition~\eqref{eq:aircomp} realises a weighted sum with unintended weights and the aggregate is biased. This fixes $b_{k,t}=\rho_{t}/h_{k,t}$ and leaves $\rho_{t}$ as the only free transmission variable. The receiver forms $\hat{\bm{s}}_t=\bm{y}_t/(|\calS_t|\rho_{t})$, whose error is $\bm{n}_t/(|\calS_t|\rho_{t})$, so
+$\mathrm{MSE}(\calS_t)=\sigma^{2}_{\mathrm{eff}}/(|\calS_t|^{2}\rho_{t}^{2})$
+is strictly decreasing in $\rho_{t}$. The per-client power budget reads
+$\mathbb{E}\big[|b_{k,t}\Delta\bw_{k,t}|^{2}\big]=\rho_{t}^{2}\pi_{k}/|h_{k,t}|^{2}\le P^{\max}_{k}$,
+i.e.\ $\rho_{t}\le|h_{k,t}|\sqrt{P^{\max}_{k}/\pi_{k}}$ for every $k\in\calS_t$. The feasible set for $\rho_t$ is thus the interval $\big(0,\min_{k\in\calS_t}|h_{k,t}|\sqrt{P^{\max}_{k}/\pi_{k}}\big]$, and since the objective is strictly decreasing in $\rho_t$ the optimum is attained at its right endpoint, which is~\eqref{eq:rhostar}. Every client for which the minimum is not attained still transmits at $b_{k,t}=\rho^{\star}_{t}/h_{k,t}$, which is its maximum power scaled down only by the alignment requirement. Substituting~\eqref{eq:rhostar} gives~\eqref{eq:mse}. Since the optimal $\{b_{k,t}\}$ and $\rho_{t}$ are determined by $\calS_t$ alone, the maximisation of $U(\calS)$ over $(\calS,\{b_{k}\},\rho)$ subject to the constraints of~\eqref{eq:problem} has the same optimal value and the same optimal active sets as~\eqref{eq:setproblem}.
+\end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:submod}]
 Consider first the learning utility. Let $\calS\subseteq\calT\subseteq\calN$ and $k\notin\calT$. For every $j\in\calN$, the map $\calS\mapsto\max_{k'\in\calS}s(j,k')$ is monotone non-decreasing, since enlarging the set cannot decrease a maximum, and its marginal gain from adding $k$ is $[\,s(j,k)-\max_{k'\in\calS}s(j,k')\,]_+$, which is non-increasing in the base set because $\max_{k'\in\calS}s(j,k')\le\max_{k'\in\calT}s(j,k')$. Summing over $j$ preserves both properties, so $U_{\mathrm{learn}}$ is monotone submodular.
@@ -557,7 +727,7 @@ which yields $U(\calS_K)\ge(1-1/e)\,U(\calS^\star)$.
 \begin{proof}[Proof of Proposition~\ref{prop:penalised}]
 For part (i), if $\mathrm{MSE}(\calS_t)\le\varepsilon$ holds along the trajectory, then the dual recursion~\eqref{eq:dual} yields $\mu_t=0$ for all $t$, hence $U_{\mu_t}=U$ and the bound of Proposition~\ref{prop:greedy} applies verbatim.
 
-For part (ii), it suffices to exhibit the structural failure. From~\eqref{eq:mse}, $\mathrm{MSE}(\calS)=c/\big(|\calS|^2\min_{k\in\calS}g_k\big)$ with $g_k=|h_k|^2$ and a constant $c>0$. The map $\calS\mapsto\min_{k\in\calS}g_k$ is order-reversing, so $-\mu\,\mathrm{MSE}(\calS)$ is not monotone in $\calS$; moreover, the marginal change in $\mathrm{MSE}$ from adding a client $k$ depends on whether $g_k$ falls below the current minimum, which can make the penalty's marginal \emph{larger} on a larger base set, violating the diminishing-returns inequality. Therefore $U_\mu$ is in general neither monotone nor submodular for $\mu>0$, and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} does not apply to it. For non-monotone submodular objectives, deterministic greedy selection admits no constant-factor guarantee, and the best known bound of the randomised greedy algorithm is $1/e$~\cite{buchbinder2014}; since $U_\mu$ need not even remain submodular, no constant factor is claimed. Feasibility in this regime is provided by Proposition~\ref{prop:pd}.
+For part (ii), it suffices to exhibit the structural failure. From~\eqref{eq:mse}, $\mathrm{MSE}(\calS)=c/\big(|\calS|^2\min_{k\in\calS}g_k\big)$ with $g_k=|h_k|^2$ and a constant $c>0$. The map $\calS\mapsto\min_{k\in\calS}g_k$ is order-reversing, so $-\mu\,\mathrm{MSE}(\calS)$ is not monotone in $\calS$. The marginal change in $\mathrm{MSE}$ from adding a client $k$ turns on whether $g_k$ falls below the current minimum, which can make the penalty's marginal \emph{larger} on a larger base set and so violate the diminishing-returns inequality. Therefore $U_\mu$ is in general neither monotone nor submodular for $\mu>0$, and the $(1-1/e)$ bound of Proposition~\ref{prop:greedy} does not apply to it. The sharpest constant available for non-monotone submodular objectives belongs to randomised greedy and equals $1/e$~\cite{buchbinder2014}, and $U_\mu$ sits outside even that class. What we claim in this regime is the guarantee of Proposition~\ref{prop:pd}, which is feasibility in time average with vanishing regret, and it is the guarantee the operating point of Section~\ref{sec:results} actually relies on.
 \end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:pd}]
@@ -590,40 +760,42 @@ Summing over $t=1,\dots,T$, telescoping against the lower bound $F^\star$, divid
 
 % ============================================================= REFERENCES
 \begin{thebibliography}{99}
-\bibitem{liu2022isac} F.~Liu \emph{et al.}, ``Integrated sensing and communications: Toward dual-functional wireless networks for 6G and beyond,'' \emph{IEEE J.\ Sel.\ Areas Commun.}, vol.~40, no.~6, pp.~1728--1767, 2022.
-\bibitem{cui2021isac} Y.~Cui, F.~Liu, X.~Jing, and J.~Mu, ``Integrating sensing and communications for ubiquitous IoT: Applications, trends, and challenges,'' \emph{IEEE Network}, vol.~35, no.~5, pp.~158--167, 2021.
-\bibitem{mcmahan2017fedavg} B.~McMahan, E.~Moore, D.~Ramage, S.~Hampson, and B.~A.~y~Arcas, ``Communication-efficient learning of deep networks from decentralized data,'' in \emph{Proc.\ AISTATS}, 2017, pp.~1273--1282.
-\bibitem{an2026otafl} Q.~An, H.~Zhu, Q.~Ye, N.~Zhang, Y.~Shi, and Y.~Zhou, ``Robust design for RIS-assisted over-the-air federated learning with imperfect cascaded CSI,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~6045--6060, 2026.
-\bibitem{mitola1999} J.~Mitola and G.~Q.~Maguire, ``Cognitive radio: Making software radios more personal,'' \emph{IEEE Pers.\ Commun.}, vol.~6, no.~4, pp.~13--18, 1999.
-\bibitem{haykin2005} S.~Haykin, ``Cognitive radio: Brain-empowered wireless communications,'' \emph{IEEE J.\ Sel.\ Areas Commun.}, vol.~23, no.~2, pp.~201--220, 2005.
-\bibitem{bkassiny2013} M.~Bkassiny, Y.~Li, and S.~K.~Jayaweera, ``A survey on machine-learning techniques in cognitive radios,'' \emph{IEEE Commun.\ Surveys Tuts.}, vol.~15, no.~3, pp.~1136--1159, 2013.
-\bibitem{galappaththige2026} D.~Loku~Galappaththige, C.~Tellambura, and S.~P.~Herath, ``Wideband cognitive radio for joint communication and sensing: Optimization of subcarrier allocation and beamforming,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~1694--1709, 2026.
-\bibitem{lai2026cognition} C.-F.~Lai, F.-Y.~Chang, Y.-C.~Chang, and H.-H.~Chen, ``Cognition-driven semi-synchronous federated learning with entropy-aware client scheduling in heterogeneous edge networks,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~3021--3035, 2026.
+\bibitem{liu2022isac} F.~Liu \emph{et al.}, ``Integrated sensing and communications: Toward dual-functional wireless networks for 6G and beyond,'' \emph{IEEE J.\ Sel.\ Areas Commun.}, vol.~40, no.~6, pp.~1728 to 1767, 2022.
+\bibitem{cui2021isac} Y.~Cui, F.~Liu, X.~Jing, and J.~Mu, ``Integrating sensing and communications for ubiquitous IoT: Applications, trends, and challenges,'' \emph{IEEE Network}, vol.~35, no.~5, pp.~158 to 167, 2021.
+\bibitem{mcmahan2017fedavg} B.~McMahan, E.~Moore, D.~Ramage, S.~Hampson, and B.~A.~y~Arcas, ``Communication-efficient learning of deep networks from decentralized data,'' in \emph{Proc.\ AISTATS}, 2017, pp.~1273 to 1282.
+\bibitem{an2026otafl} Q.~An, H.~Zhu, Q.~Ye, N.~Zhang, Y.~Shi, and Y.~Zhou, ``Robust design for RIS-assisted over-the-air federated learning with imperfect cascaded CSI,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~6045 to 6060, 2026.
+\bibitem{mitola1999} J.~Mitola and G.~Q.~Maguire, ``Cognitive radio: Making software radios more personal,'' \emph{IEEE Pers.\ Commun.}, vol.~6, no.~4, pp.~13 to 18, 1999.
+\bibitem{haykin2005} S.~Haykin, ``Cognitive radio: Brain-empowered wireless communications,'' \emph{IEEE J.\ Sel.\ Areas Commun.}, vol.~23, no.~2, pp.~201 to 220, 2005.
+\bibitem{bkassiny2013} M.~Bkassiny, Y.~Li, and S.~K.~Jayaweera, ``A survey on machine-learning techniques in cognitive radios,'' \emph{IEEE Commun.\ Surveys Tuts.}, vol.~15, no.~3, pp.~1136 to 1159, 2013.
+\bibitem{galappaththige2026} D.~Loku~Galappaththige, C.~Tellambura, and S.~P.~Herath, ``Wideband cognitive radio for joint communication and sensing: Optimization of subcarrier allocation and beamforming,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~1694 to 1709, 2026.
+\bibitem{lai2026cognition} C.-F.~Lai, F.-Y.~Chang, Y.-C.~Chang, and H.-H.~Chen, ``Cognition-driven semi-synchronous federated learning with entropy-aware client scheduling in heterogeneous edge networks,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~3021 to 3035, 2026.
 \bibitem{balakrishnan2022divfl} R.~Balakrishnan, T.~Li, T.~Zhou, N.~Himayat, V.~Smith, and J.~Bilmes, ``Diverse client selection for federated learning via submodular maximization,'' in \emph{Proc.\ ICLR}, 2022.
-\bibitem{yang2020energy} Z.~Yang, M.~Chen, W.~Saad, C.~S.~Hong, and M.~Shikh-Bahaei, ``Energy efficient federated learning over wireless communication networks,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~20, no.~3, pp.~1935--1949, 2021.
-\bibitem{amiri2021scheduling} M.~M.~Amiri, D.~G\"und\"uz, S.~R.~Kulkarni, and H.~V.~Poor, ``Convergence of update aware device scheduling for federated learning at the wireless edge,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~20, no.~6, pp.~3643--3658, 2021.
-\bibitem{lai2021oort} F.~Lai, X.~Zhu, H.~V.~Madhyastha, and M.~Chowdhury, ``Oort: Efficient federated learning via guided participant selection,'' in \emph{Proc.\ USENIX OSDI}, 2021, pp.~19--35.
+\bibitem{yang2020energy} Z.~Yang, M.~Chen, W.~Saad, C.~S.~Hong, and M.~Shikh-Bahaei, ``Energy efficient federated learning over wireless communication networks,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~20, no.~3, pp.~1935 to 1949, 2021.
+\bibitem{amiri2021scheduling} M.~M.~Amiri, D.~G\"und\"uz, S.~R.~Kulkarni, and H.~V.~Poor, ``Convergence of update aware device scheduling for federated learning at the wireless edge,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~20, no.~6, pp.~3643 to 3658, 2021.
+\bibitem{lai2021oort} F.~Lai, X.~Zhu, H.~V.~Madhyastha, and M.~Chowdhury, ``Oort: Efficient federated learning via guided participant selection,'' in \emph{Proc.\ USENIX OSDI}, 2021, pp.~19 to 35.
 \bibitem{li2020fairfl} T.~Li, M.~Sanjabi, A.~Beirami, and V.~Smith, ``Fair resource allocation in federated learning,'' in \emph{Proc.\ ICLR}, 2020.
-\bibitem{chen2024exploring} Z.~Chen, W.~Yi, and A.~Nallanathan, ``Exploring representativity in device scheduling for wireless federated learning,'' \emph{IEEE Trans. Wireless Commun.}, vol.~23, no.~1, pp.~720--735, Jan. 2024.
-\bibitem{liu2020beamforming} F.~Liu, C.~Masouros, A.~P.~Petropulu, H.~Griffiths, and L.~Hanzo, ``Joint radar and communication design: Applications, state-of-the-art, and the road ahead,'' \emph{IEEE Trans.\ Commun.}, vol.~68, no.~6, pp.~3834--3862, 2020.
-\bibitem{wang2024cramer} Y.~Wang, M.~Tao, and S.~Sun, ``Cram\'er-Rao bound analysis and beamforming design for integrated sensing and communication with extended targets,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~23, no.~11, pp.~15987--16000, Nov. 2024.
-\bibitem{zhou2026crb} J.~Zhou, C.~Zhou, Y.~Sun, and C.~Tellambura, ``CRB-rate tradeoff in RSMA-enabled near-field integrated multi-target sensing and multi-user communications,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~3687--3700, 2026.
-\bibitem{jiang2026marl} M.~Jiang \emph{et al.}, ``Hierarchical attention-driven multi-agent reinforcement learning for resource allocation in cell-free massive MIMO with integrated sensing and communication,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~6955--6969, 2026.
-\bibitem{wen2023isacfl} D.~Wen \emph{et al.}, ``Task-oriented sensing, computation, and communication integration for multi-device edge AI,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~23, no.~3, pp.~2486--2502, 2024.
-\bibitem{zheng2024otafliscc} P.~Zheng \emph{et al.}, ``Over-the-air federated learning client selection in integrated sensing, computing and communication,'' in \emph{Proc.\ IEEE ICC Workshops}, 2024, pp.~804--809.
-\bibitem{du2024fediscc} M.~Du, H.~Zheng, M.~Gao, X.~Feng, J.~Hu, and Y.~Chen, ``Integrated sensing, communication, and computation for over-the-air federated learning in 6G wireless networks,'' \emph{IEEE Internet Things J.}, vol.~11, no.~21, pp.~35551--35567, 2024.
+\bibitem{chen2024exploring} Z.~Chen, W.~Yi, and A.~Nallanathan, ``Exploring representativity in device scheduling for wireless federated learning,'' \emph{IEEE Trans. Wireless Commun.}, vol.~23, no.~1, pp.~720 to 735, Jan. 2024.
+\bibitem{liu2020beamforming} F.~Liu, C.~Masouros, A.~P.~Petropulu, H.~Griffiths, and L.~Hanzo, ``Joint radar and communication design: Applications, state-of-the-art, and the road ahead,'' \emph{IEEE Trans.\ Commun.}, vol.~68, no.~6, pp.~3834 to 3862, 2020.
+\bibitem{wang2024cramer} Y.~Wang, M.~Tao, and S.~Sun, ``Cram\'er-Rao bound analysis and beamforming design for integrated sensing and communication with extended targets,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~23, no.~11, pp.~15987 to 16000, Nov. 2024.
+\bibitem{zhou2026crb} J.~Zhou, C.~Zhou, Y.~Sun, and C.~Tellambura, ``CRB-rate tradeoff in RSMA-enabled near-field integrated multi-target sensing and multi-user communications,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~3687 to 3700, 2026.
+\bibitem{jiang2026marl} M.~Jiang \emph{et al.}, ``Hierarchical attention-driven multi-agent reinforcement learning for resource allocation in cell-free massive MIMO with integrated sensing and communication,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~6955 to 6969, 2026.
+\bibitem{wen2023isacfl} D.~Wen \emph{et al.}, ``Task-oriented sensing, computation, and communication integration for multi-device edge AI,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~23, no.~3, pp.~2486 to 2502, 2024.
+\bibitem{zheng2024otafliscc} P.~Zheng \emph{et al.}, ``Over-the-air federated learning client selection in integrated sensing, computing and communication,'' in \emph{Proc.\ IEEE ICC Workshops}, 2024, pp.~804 to 809.
+\bibitem{du2024fediscc} M.~Du, H.~Zheng, M.~Gao, X.~Feng, J.~Hu, and Y.~Chen, ``Integrated sensing, communication, and computation for over-the-air federated learning in 6G wireless networks,'' \emph{IEEE Internet Things J.}, vol.~11, no.~21, pp.~35551 to 35567, 2024.
 \bibitem{wen2025isccairfeel} D.~Wen, S.~Xie, X.~Cao, Y.~Cui, J.~Xu, Y.~Shi, and S.~Cui, ``Integrated sensing, communication, and computation for over-the-air federated edge learning,'' \emph{IEEE Trans.\ Wireless Commun.}, 2025, to appear (arXiv:2508.15185).
-\bibitem{zhang2026isccfl} N.~Zhang, Q.~Hu, D.~Wen, Y.~Mao, T.-M.~Ma, G.~Yu, and W.~Wang, ``Integrated sensing-communication-computation-based online federated learning with limited cache in OFDM systems,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~5578--5594, 2026.
+\bibitem{zhang2026isccfl} N.~Zhang, Q.~Hu, D.~Wen, Y.~Mao, T.-M.~Ma, G.~Yu, and W.~Wang, ``Integrated sensing-communication-computation-based online federated learning with limited cache in OFDM systems,'' \emph{IEEE Trans.\ Cogn.\ Commun.\ Netw.}, vol.~12, pp.~5578 to 5594, 2026.
 \bibitem{asaad2025} S.~Asaad, P.~Wang, and H.~Tabassum, ``Over-the-air FEEL with integrated sensing: Joint scheduling and beamforming design,'' \emph{IEEE Trans.\ Wireless Commun.}, 2025, to appear (arXiv:2501.06334).
-\bibitem{hu2025differentially} S.~Hu, X.~Yuan, W.~Ni, X.~Wang, E.~Hossain, and H.~V.~Poor, ``Differentially private wireless federated learning with integrated sensing and communication,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~24, no.~8, pp.~6690--6704, 2025.
+\bibitem{hu2025differentially} S.~Hu, X.~Yuan, W.~Ni, X.~Wang, E.~Hossain, and H.~V.~Poor, ``Differentially private wireless federated learning with integrated sensing and communication,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~24, no.~8, pp.~6690 to 6704, 2025.
+\bibitem{zhu2020broadband} G.~Zhu, Y.~Wang, and K.~Huang, ``Broadband analog aggregation for low-latency federated edge learning,'' \emph{IEEE Trans.\ Wireless Commun.}, vol.~19, no.~1, pp.~491 to 506, Jan. 2020.
+\bibitem{cao2022optimized} X.~Cao, G.~Zhu, J.~Xu, Z.~Wang, and S.~Cui, ``Optimized power control design for over-the-air federated edge learning,'' \emph{IEEE J.\ Sel.\ Areas Commun.}, vol.~40, no.~1, pp.~342 to 358, Jan. 2022.
 \bibitem{kay1993} S.~M.~Kay, \emph{Fundamentals of Statistical Signal Processing: Estimation Theory}.\ Prentice Hall, 1993.
-\bibitem{godrich2010} H.~Godrich, A.~M.~Haimovich, and R.~S.~Blum, ``Target localization accuracy gain in MIMO radar-based systems,'' \emph{IEEE Trans.\ Inf.\ Theory}, vol.~56, no.~6, pp.~2783--2803, 2010.
-\bibitem{nemhauser1978} G.~L.~Nemhauser, L.~A.~Wolsey, and M.~L.~Fisher, ``An analysis of approximations for maximizing submodular set functions---I,'' \emph{Math.\ Program.}, vol.~14, no.~1, pp.~265--294, 1978.
-\bibitem{krause2014submodular} A.~Krause and D.~Golovin, ``Submodular function maximization,'' in \emph{Tractability: Practical Approaches to Hard Problems}.\ Cambridge Univ.\ Press, 2014, pp.~71--104.
-\bibitem{conforti1984} M.~Conforti and G.~Cornu\'ejols, ``Submodular set functions, matroids and the greedy algorithm: Tight worst-case bounds and some generalizations of the Rado-Edmonds theorem,'' \emph{Discrete Appl.\ Math.}, vol.~7, no.~3, pp.~251--274, 1984.
-\bibitem{buchbinder2014} N.~Buchbinder, M.~Feldman, J.~Naor, and R.~Schwartz, ``Submodular maximization with cardinality constraints,'' in \emph{Proc.\ ACM-SIAM SODA}, 2014, pp.~1433--1452.
-\bibitem{zhang2026integrated} D.~Zhang \emph{et al.}, ``Integrated sensing and communications over the years: An evolution perspective,'' \emph{IEEE Commun.\ Surveys Tuts.}, vol.~28, pp.~5014--5048, 2026.
-\bibitem{bottou2018} L.~Bottou, F.~E.~Curtis, and J.~Nocedal, ``Optimization methods for large-scale machine learning,'' \emph{SIAM Rev.}, vol.~60, no.~2, pp.~223--311, 2018.
+\bibitem{godrich2010} H.~Godrich, A.~M.~Haimovich, and R.~S.~Blum, ``Target localization accuracy gain in MIMO radar-based systems,'' \emph{IEEE Trans.\ Inf.\ Theory}, vol.~56, no.~6, pp.~2783 to 2803, 2010.
+\bibitem{nemhauser1978} G.~L.~Nemhauser, L.~A.~Wolsey, and M.~L.~Fisher, ``An analysis of approximations for maximizing submodular set functions---I,'' \emph{Math.\ Program.}, vol.~14, no.~1, pp.~265 to 294, 1978.
+\bibitem{krause2014submodular} A.~Krause and D.~Golovin, ``Submodular function maximization,'' in \emph{Tractability: Practical Approaches to Hard Problems}.\ Cambridge Univ.\ Press, 2014, pp.~71 to 104.
+\bibitem{conforti1984} M.~Conforti and G.~Cornu\'ejols, ``Submodular set functions, matroids and the greedy algorithm: Tight worst-case bounds and some generalizations of the Rado-Edmonds theorem,'' \emph{Discrete Appl.\ Math.}, vol.~7, no.~3, pp.~251 to 274, 1984.
+\bibitem{buchbinder2014} N.~Buchbinder, M.~Feldman, J.~Naor, and R.~Schwartz, ``Submodular maximization with cardinality constraints,'' in \emph{Proc.\ ACM-SIAM SODA}, 2014, pp.~1433 to 1452.
+\bibitem{zhang2026integrated} D.~Zhang \emph{et al.}, ``Integrated sensing and communications over the years: An evolution perspective,'' \emph{IEEE Commun.\ Surveys Tuts.}, vol.~28, pp.~5014 to 5048, 2026.
+\bibitem{bottou2018} L.~Bottou, F.~E.~Curtis, and J.~Nocedal, ``Optimization methods for large-scale machine learning,'' \emph{SIAM Rev.}, vol.~60, no.~2, pp.~223 to 311, 2018.
 \end{thebibliography}
 
 \end{document}

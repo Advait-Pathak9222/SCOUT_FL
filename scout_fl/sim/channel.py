@@ -23,6 +23,22 @@ def comm_channel_gains(clients: np.ndarray, bs: np.ndarray, rng: np.random.Gener
       * 'physical': large-scale term = 10^(-PL(d)/10) with a real log-distance path loss
         (3GPP-style, carrier_ghz), giving a genuine unitless path gain so that, with a
         thermal-noise sigma^2 and a Watt-scale power, P*g/sigma^2 is a true SNR."""
+    large = large_scale_gain(clients, bs, snr_ref_db=snr_ref_db, ref_distance=ref_distance,
+                             pathloss_exponent=pathloss_exponent,
+                             pathloss_model=pathloss_model, carrier_ghz=carrier_ghz)
+    return large * small_scale_fading(large.shape[0], rng, model=model,
+                                      rician_k_db=rician_k_db)
+
+
+def large_scale_gain(clients: np.ndarray, bs: np.ndarray, *, snr_ref_db: float = 20.0,
+                     ref_distance: float = 10.0, pathloss_exponent: float = 3.0,
+                     pathloss_model: str = "reference_snr",
+                     carrier_ghz: float = 3.5) -> np.ndarray:
+    """Distance-dependent (slow) part of the channel power gain -> (K,).
+
+    Split out from the fading so a run can hold the geometry fixed while redrawing
+    the small-scale term every round (see ``small_scale_fading``).
+    """
     clients = np.asarray(clients, dtype=float)
     bs = np.asarray(bs, dtype=float)
     dist = np.clip(np.linalg.norm(clients - bs, axis=1), ref_distance, None)   # (K,)
@@ -31,8 +47,17 @@ def comm_channel_gains(clients: np.ndarray, bs: np.ndarray, rng: np.random.Gener
         large = path_gain_linear(dist, carrier_ghz, pathloss_exponent, d0_m=ref_distance)
     else:
         large = 10.0 ** (snr_ref_db / 10.0) * (ref_distance / dist) ** pathloss_exponent
-    K = dist.shape[0]
+    return large
 
+
+def small_scale_fading(K: int, rng: np.random.Generator, *, model: str = "rician",
+                       rician_k_db: float = 6.0) -> np.ndarray:
+    """One realisation of the fading power ``|h~|^2`` -> (K,).
+
+    Called once per run for a block-static channel, or once per coherence block for
+    a time-varying one. The mean is 1 under both models, so the large-scale term
+    carries the path loss and this term carries only the fluctuation.
+    """
     if model == "rayleigh":
         h = (rng.standard_normal(K) + 1j * rng.standard_normal(K)) / np.sqrt(2.0)
     elif model == "rician":
@@ -42,4 +67,4 @@ def comm_channel_gains(clients: np.ndarray, bs: np.ndarray, rng: np.random.Gener
         h = los + nlos * (rng.standard_normal(K) + 1j * rng.standard_normal(K)) / np.sqrt(2.0)
     else:
         raise ValueError(f"unknown fading model {model!r}")
-    return large * np.abs(h) ** 2                                              # (K,)
+    return np.abs(h) ** 2                                                      # (K,)

@@ -302,3 +302,154 @@ Clean monotone CRB↓ with gentle accuracy↓; λ=1 at the accuracy-favouring kn
   trail remains in figures/stats/gap_pareto.json.
 - Recompiled clean: no undefined refs, no overfull hboxes; paper 12 → 11 pages;
   Fig. 4 = gap distribution (single column, p. 7).
+
+---
+
+## 2026-09-05 — TWC scope desk-reject → TCCN retarget, and an AirComp bug
+
+TWC (Paper-TW-Jul-26-2559) desk-rejected on **scope only** — no reviewers, no technical
+criticism. The Executive Editorial Committee held that problem (12) carried no explicit
+PHY constraints, that the algorithm ignored power control, bandwidth allocation and
+interference, and that the numerical study was not tied to the wireless environment.
+Retargeted to IEEE TCCN, whose scope the paper already fits.
+
+### [BUG] AirComp aggregation MSE was clamped → 75.4% of campaign rounds invalid
+- `sim/aircomp.py` computed `sigma2 / (|S|^2 * max(eta, 1e-12))` with `eta = P * g_min`.
+  The `1e-12` floor was written for the normalised convention (P = sigma2 = 1, eta ~ 1).
+  Under the physical link budget eta is 1e-14..1e-10 W, so the floor was **always active**:
+  MSE saturated at `sigma2/(K^2 * 1e-12)` = **2.0067e-4**, independent of transmit power.
+- Reach: **452,354 / 600,000** stored campaign rounds sat exactly on the ceiling (75.4%);
+  `runs/campaign_main` 75.4%, `runs_lambda` 99.7%, `runs_tccn` 37.6%.
+- Symptoms in the submitted paper: `B_wireless_snr` points -15..-35 dBm bit-identical
+  (acc 0.4595, CRB 0.05463 at every one); Table II's MSE column identical (2.0e-4) for
+  four methods; the "constraint is slack at the main operating point" claim (Prop 4(i))
+  an artifact — the true MSE at -15 dBm is ~1.2e-3, above the budget eps = 1e-3.
+- Direction of the bias: the clamp *under*-injects AirComp noise for weak-min-gain sets,
+  so it flattered the channel-blind methods (random / DivFL / PO-FL clamped in 96% of
+  their rounds) and suppressed SCOUT-FL's channel-awareness. Fixing it should widen the
+  margin, but that must be measured, not asserted.
+- **[EDIT] Fixed**: guard only the degenerate `eta <= 0` case (-> inf). MSE now scales
+  exactly 10x per 10 dB. Two regression tests added in `tests/test_aircomp.py`
+  (`test_mse_scales_with_power_in_physical_units`, `test_zero_gain_gives_infinite_mse`).
+  98 tests pass, 0 failures.
+- **[EDIT]** `run_campaign.py` gained `--tag` so a re-run cannot silently resume the
+  clamped units. `scripts/rerun_fixed_aircomp.sh` regenerates the sensing-aware pool
+  (13 methods x 25 points x 5 seeds) with the clamped stores archived, not deleted.
+- Decisions taken: re-run the **sensing-aware pool only** (it is exactly what the paper
+  reports); keep the nominal operating point at **-15 dBm and let the constraint bind**,
+  which makes the primal-dual mechanism load-bearing at the headline point.
+
+### [EDIT] Paper: physical-layer content added (answers the desk-reject directly)
+- Title -> "Cognitive Client Scheduling for ISAC-Enabled Over-the-Air Federated Learning".
+- Abstract and keywords rewritten for TCCN; PHY and power-control claims added.
+- **New Sec. II-B "Physical-Layer Model and Link Budget"**: thermal noise sigma^2 = kTFB,
+  log-distance path loss, small-scale fading, an interference-inclusive SINR (3), and
+  per-round latency/energy (5). Real numbers: sigma^2 = -107 dBm, N0 = -167 dBm/Hz,
+  uplink phase 12.8 ms, receive SNR 1.7-32.0 dB across the cell at -15 dBm.
+- **New Prop. 1 (power control)**: channel-inversion AirComp with per-client power budgets
+  is optimised by rho* = min_k |h_k| sqrt(P_k^max / pi_k) — every active client at full
+  power, denoising factor set by the weakest link — so the joint optimisation over
+  (S, {b_k}, rho) reduces with no loss of optimality to a set problem. Proof in the
+  appendix. This is the direct answer to "no adaptive transmit power control".
+- **New Remark 1 (multiple access and bandwidth)**: why the whole band is shared (AirComp
+  uplink 12.8 ms vs 0.88 s for orthogonal access on the same 10 clients, a factor of 69),
+  and the closed-form optimal bandwidth B* = d / (2(T_max - max_k C_k/f_k)), since B raises
+  the noise floor linearly while cutting latency as 1/B.
+- **New Remark (interference floor)**: interference enters only through sigma^2_eff, so a
+  rise of Delta dB in the interference floor is indistinguishable from cutting eps by
+  Delta dB — the loop manages interference without estimating it.
+- **Problem (12) restated** with the alignment condition, per-client power budgets, the
+  interference-inclusive MSE constraint and a latency deadline, then reduced to (13).
+- **New Sec. VI-K "Operation Across the Transmit-Power and SINR Range"** + Fig. 14
+  (`fig_power_sweep` in paperfigs.py, 4 panels: accuracy, CRB, realised MSE vs budget,
+  settled dual price). Numbers pending the re-run, marked with \TBD.
+- Prop. 4 regime scoping rewritten: the main operating point is now BINDING, so the
+  primal-dual mechanism, not the greedy constant, carries the guarantee there.
+- Related work: new paragraph on AirComp power control / ISAC beamforming
+  (zhu2020broadband, cao2022optimized — both verified against source), positioning this
+  paper as solving the allocation in closed form and leaving the set as the real problem.
+- Table I: added path-loss exponent, bandwidth, noise floor, payload, uplink phase, CPU;
+  relabelled the mislabelled "Receive SNR sweep 0..-35 dB" as a transmit-power sweep in dBm.
+- Conclusion: dropped "joint power control with the dual price" from future work (it is now
+  a result); replaced with multi-cell interference coupling, multi-antenna beam selection,
+  and imperfect CSI/synchronisation in the AirComp alignment.
+- Hardcoded "Proposition 5" / "Proposition 1" / "(4) and (5)" / "(9)" replaced with \ref.
+- `\TBD{..}` marks every number awaiting the re-run; the file header lists them all.
+
+---
+
+## 2026-09-05 (later) — codebase sanity audit, and what it changed
+
+A full pass over the simulator for hardcoded values standing in for physics, for
+knobs the config advertises but the code ignores, and for claims in the paper the
+code does not support. Ten findings, six of them affecting reported numbers.
+
+### Findings that change results
+1. **The channel was frozen for the whole run.** `g` was drawn once per seed and
+   reused for all 150 rounds, while the paper writes `h_{k,t}` and describes a
+   scheduler that perceives the channel every round. The adaptive dual price had
+   nothing to track except the injected epsilon step.
+   FIX: `sim/channel.py` split into `large_scale_gain` (fixed by geometry) and
+   `small_scale_fading` (redrawn per coherence block). New config
+   `channel.fading_per_round` and `channel.coherence_rounds`, off by default so the
+   old behaviour is reproducible, on in `campaign_tccn.yaml`. The coherence length is
+   now a swept axis, and its longest point recovers the frozen channel exactly.
+2. **The sensing SNR did not depend on the transmit power.** `sensing.ref_snr_db: 20.0`
+   was a fixed constant, so a transmit-power sweep moved the communication axis while
+   holding the sensing axis still. That is not ISAC. The module docstring had flagged
+   the placeholder and the replacement never arrived.
+   FIX: `sensing_snr` takes `tx_power_dbm` and `ref_tx_power_dbm` and shifts the echo
+   SNR by their difference in dB, anchored at -15 dBm so the nominal point is
+   bit-identical and only the sweep moves.
+3. **The AirComp noise injected into training used a hardcoded 0.5 factor** and
+   ignored the per-entry update power pi entirely. Measured pi is 1e-5 to 4e-5, so
+   the distortion was over-injected by more than two orders of magnitude, which is
+   the likely cause of the 46 percent CIFAR-10 plateau the earlier review flagged.
+   FIX: `aircomp.ota_noise_scale: auto` derives the scale as sqrt(pi) from the
+   previous round's updates. The constraint itself stays in normalised units, so
+   epsilon keeps its meaning as a bound on the relative aggregation error and the
+   epsilon grid keeps its interpretation.
+4. **Interference did not exist in the code** while the paper's model carries it.
+   FIX: `physical.interference_dbm` folds into sigma^2 everywhere, plus a sweep.
+5. **Two baselines are the same selector as something else.** Measured over 150
+   rounds and 5 seeds, `iscc_air_feel` has mean Jaccard overlap 0.891 with
+   `comm_only` and is bit-identical on seed 0; `fedavg_iscc` and `fedsgd_iscc` share
+   a selector; `fed_iscc` is identical to `snr_only`. The pool of 32 methods contains
+   28 distinct selection trajectories.
+   This is not only a bookkeeping problem, it is the paper's own first claim made
+   measurable. Where targets sit inside the cell, echo SNR and channel gain are
+   monotone in nearly the same distance, so any scalar-SNR sensing criterion ranks
+   clients exactly as channel gain alone. A bearing-dependent criterion escapes it.
+   NEW: `analysis/baseline_overlap.py` measures it, and a new paper subsection
+   reports it instead of asserting it.
+6. **Per-client transmit budgets** were a single scalar while the new Proposition 1
+   is stated with `P_k^max`. FIX: `aggregation_mse` accepts per-client budgets.
+
+### Paper claims the code did not support
+7. The algorithm section claimed lazy evaluation. `penalized_greedy`, which is the
+   path SCOUT-FL v2 actually takes, re-evaluates every candidate. That is the correct
+   choice, since the priced objective loses submodularity once the dual is positive,
+   so cached marginal bounds are unsafe. The text now says so and ties it to the
+   measured overhead.
+8. Problem (12) carries a latency deadline that nothing enforced or reported.
+   `round_latency_s` is now logged per round.
+
+### Dead knobs
+9. `physical.sense_power_w`, `physical.sense_time_s` and `selection.use_lazy_greedy`
+   were read by nothing. Dropped from the TCCN config.
+
+### Reproducibility
+10. Per-unit seeding is correct, so resume order does not change results. MPS runs
+    under `warn_only` determinism, so the final numbers should come from CUDA or CPU.
+
+### Delivered
+- `scout_fl/configs/campaign_tccn.yaml`, the configuration the paper reports.
+- `scripts/schedule_experiments.sh`, ten stages, 2241 runs, resumable and sharded,
+  with stage 4 taking its epsilon grid from what stage 1 measured.
+- Three new sweeps: interference, bandwidth, channel coherence.
+- `analysis/baseline_overlap.py`.
+- 9 new tests. 123 pass, 0 fail.
+- Paper: new subsections on the scalar-proxy collapse and on the three physical-layer
+  sweeps, the fading and normalisation statements, the lazy-evaluation correction.
+- Style pass. No colons, semicolons or dashes remain in prose, and the guarantees are
+  stated as what is claimed rather than what is not.

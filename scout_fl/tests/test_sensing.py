@@ -121,3 +121,32 @@ def test_greedy_handles_nonfinite_marginals_without_none_selection():
     res = ScoutGreedy(use_lazy=False).select(
         utility=util, num_clients=4, budget=3, feasible=lambda S, k: False)
     assert res.selected == [0, 1, 2]
+
+
+def test_echo_snr_tracks_transmit_power():
+    """The transmission that carries the update also illuminates the target, so the echo
+    SNR must move with the transmit power once the reference power is declared."""
+    from scout_fl.sim.sensing import sensing_snr
+    geom = {"range": np.full((4, 2), 20.0)}
+    ref = sensing_snr(geom, 20.0, 2.0, ref_distance=10.0,
+                      tx_power_dbm=-15.0, ref_tx_power_dbm=-15.0)
+    base = sensing_snr(geom, 20.0, 2.0, ref_distance=10.0)
+    assert np.allclose(ref, base), "the reference power must leave the calibration untouched"
+    for tx, factor in ((-5.0, 10.0), (-25.0, 0.1), (-35.0, 0.01)):
+        got = sensing_snr(geom, 20.0, 2.0, ref_distance=10.0,
+                          tx_power_dbm=tx, ref_tx_power_dbm=-15.0)
+        assert np.allclose(got, base * factor, rtol=1e-9)
+    # without a declared reference the sensing axis stays independent of the power
+    assert np.allclose(sensing_snr(geom, 20.0, 2.0, ref_distance=10.0, tx_power_dbm=-35.0), base)
+
+
+def test_fading_redraw_changes_the_channel_but_not_the_geometry():
+    from scout_fl.sim.channel import large_scale_gain, small_scale_fading
+    clients = np.random.default_rng(0).uniform(0.0, 100.0, (30, 2))
+    bs = np.array([50.0, 50.0])
+    L = large_scale_gain(clients, bs, pathloss_model="physical")
+    rng = np.random.default_rng(3)
+    blocks = [L * small_scale_fading(30, rng) for _ in range(6)]
+    assert not np.allclose(blocks[0], blocks[1]), "fading must move between coherence blocks"
+    ratios = np.stack([b / L for b in blocks])
+    assert 0.5 < ratios.mean() < 2.0, "fading power should average near one"

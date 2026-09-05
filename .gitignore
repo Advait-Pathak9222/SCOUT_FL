@@ -11,6 +11,7 @@ data/
 # --- experiment outputs + resumable run store (regenerated) ---
 outputs/
 runs/
+runs_*/
 runs_smoke/
 
 # --- transient stage/unit logs (regenerated every run) ---
@@ -23,3 +24,11 @@ Papers/
 .DS_Store
 .vscode/
 .idea/
+
+# --- LaTeX build artefacts ---
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.synctex.gz

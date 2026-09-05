@@ -46,6 +46,7 @@ from scout_fl.selection.random import RandomSelector
 from scout_fl.selection.scout_greedy import ScoutGreedy
 from scout_fl.selection.snr_based import SNRSelector
 from scout_fl.sim.aircomp import aggregation_mse, min_gain_for_mse
+from scout_fl.sim.channel import small_scale_fading
 from scout_fl.sim.channel import comm_channel_gains
 from scout_fl.sim.energy_latency import round_energy_latency
 from scout_fl.sim.nonstationary import WirelessISACNonstationarity
@@ -93,10 +94,15 @@ def _physical_params(cfg, n_params, avg_local_samples):
     sigma2 = thermal_noise_power_w(B, float(phys.get("noise_figure_db", 7.0)),
                                    float(phys.get("temperature_k", 290.0)))
     P = dbm_to_watt(float(phys.get("tx_power_dbm", 0.0)))
+    # Aggregate co-channel interference, treated as Gaussian and folded into the noise
+    # floor: every downstream expression sees only sigma^2 + I.
+    _i = phys.get("interference_dbm")
+    I = 0.0 if _i is None or str(_i).strip().lower() in ("", "none", "null") else dbm_to_watt(float(_i))
     model_bits = float(n_params) * float(phys.get("bits_per_param", 32))
     cpu_cycles = (float(phys.get("cycles_per_sample", 1.0e6)) * float(max(avg_local_samples, 1.0))
                   * float(cfg.fl.get("local_epochs", 1)))
-    return {"power": P, "sigma2": sigma2, "model_bits": model_bits, "cpu_cycles": cpu_cycles}
+    return {"power": P, "sigma2": sigma2, "interference": I,
+            "model_bits": model_bits, "cpu_cycles": cpu_cycles}
 
 
 # ISCC system-baseline variants: AirComp distortion is intrinsic to OTA-FL / ISCC methods,
@@ -221,8 +227,10 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     phys = _physical_params(cfg, num_params(server.model), _avg_local)
     if phys is not None:
         P, sigma2, model_bits, cpu_cycles = phys["power"], phys["sigma2"], phys["model_bits"], phys["cpu_cycles"]
+        interference = phys["interference"]
     else:
         P, sigma2 = float(cfg.aircomp.power), float(cfg.aircomp.sigma2)
+        interference = 0.0
         model_bits, cpu_cycles = float(cfg.aircomp.model_bits), float(cfg.energy.cpu_cycles)
     mse_eps = cfg.constraints.mse_agg_max
     _dual_limit = 1.0 if (cfg.constraints.get("dual_normalized", False) and mse_eps) else mse_eps
@@ -246,7 +254,8 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
     fair_dual = ParticipationDual(K, budget,                # JEDI participation fairness
                                   lr=float(cfg.objectives.get("fair_dual_lr", 1.0)))
     ota_on = bool(cfg.aircomp.get("ota_distortion", False))
-    ota_scale = float(cfg.aircomp.get("ota_noise_scale", 1.0))
+    _ota_scale_cfg = cfg.aircomp.get("ota_noise_scale", 1.0)
+    ota_scale = 1.0 if str(_ota_scale_cfg).lower() == "auto" else float(_ota_scale_cfg)
     obj = cfg.objectives
     participation = np.zeros(K)
     rows = []
@@ -280,10 +289,39 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         vis_model = None
     vis_feats = None   # populated in the selection block each round
 
+    # Time-varying channel. The geometry (path loss) is fixed for a run; the small-scale
+    # term is redrawn every `coherence_rounds` rounds when channel.fading_per_round is on,
+    # so the scheduler faces a channel that actually moves and the dual price has something
+    # to track. Off by default, which reproduces the block-static behaviour.
+    _chan = cfg.get("channel", {})
+    fade_per_round = bool(_chan.get("fading_per_round", False))
+    coherence = max(int(_chan.get("coherence_rounds", 1)), 1)
+    large_scale = getattr(scn, "large_scale", None)
+    if fade_per_round and large_scale is None:
+        fade_per_round = False        # no separable large-scale term available
+    fade_rng = np.random.default_rng(int(base_seed) + 7717)
+    _g_block = np.asarray(g, dtype=float)
+    # Per-entry power pi of the model update. It sets how far channel inversion can push the
+    # denoising factor before the transmit-power budget binds, and it is the scale the AirComp
+    # noise must be referred to. Measured from the previous round's updates (the server knows
+    # them); the first round uses the configured seed value.
+    # Per-entry power pi of the transmitted update. Clients normalise to unit power before
+    # transmission (standard AirComp practice), so pi cancels out of the aggregation-error
+    # CONSTRAINT and epsilon keeps its meaning as a bound on the relative error. pi re-enters
+    # where it belongs, on the distortion actually injected into the model: the noise added to
+    # the aggregate has std sqrt(pi) * sqrt(MSE). Measured from the previous round's updates,
+    # which is what the server can broadcast as the next round's normalisation.
+    update_power = float(cfg.aircomp.get("update_power_init", 1.0))
+    auto_pi = str(cfg.aircomp.get("ota_noise_scale", "")).lower() == "auto"
+
     for t in range(rounds):
         print(f"[run] method={method} seed={base_seed} round={t + 1}/{rounds}", flush=True)
         ns_diag = {}
-        g_round = np.asarray(g, dtype=float)
+        if fade_per_round and t % coherence == 0:
+            _g_block = np.asarray(large_scale, dtype=float) * small_scale_fading(
+                K, fade_rng, model=_chan.get("model", "rician"),
+                rician_k_db=float(_chan.get("rician_k_db", 6.0)))
+        g_round = _g_block
         if ns_model.enabled:
             ns_state = ns_model.round_state(t)
             g_round = ns_state.channel_gains
@@ -349,12 +387,14 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         if method == "scout_greedy":
             feasible = None
             if aircomp_on and mse_eps is not None:
-                g_min = min_gain_for_mse(mse_eps, budget, P, sigma2)
+                g_min = min_gain_for_mse(mse_eps, budget, P, sigma2,
+                                        interference=interference)
                 feasible = lambda S, k: g_round[k] >= g_min          # AirComp-MSE gate
             res = ScoutGreedy().select(utility=total, num_clients=K, budget=budget, feasible=feasible)
         elif method == "scout_v2":
             def penalty_fn(S, k):                              # soft primal-dual MSE penalty (no hard gate)
-                mse_k = aggregation_mse(g_round, S + [k], power=P, sigma2=sigma2)
+                mse_k = aggregation_mse(g_round, S + [k], power=P, sigma2=sigma2,
+                                        interference=interference)
                 return duals.mu.get("mse", 0.0) * _mse_viol(mse_k, mse_eps)
             res = ScoutGreedy().select(utility=total, num_clients=K, budget=budget, penalty_fn=penalty_fn)
         elif method == "jedi" or method in _JEDI_ABLATIONS:    # joint experimental-design (+ ablations)
@@ -365,7 +405,8 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
                                             power=P, sigma2=sigma2, learn_mult=learn_mult, **jkw)
             feasible = None
             if abl.get("_hard_gate") and aircomp_on and mse_eps is not None:
-                g_min = min_gain_for_mse(mse_eps, budget, P, sigma2)
+                g_min = min_gain_for_mse(mse_eps, budget, P, sigma2,
+                                        interference=interference)
                 feasible = lambda S, k: g_round[k] >= g_min          # SCOUT-v1-style hard MSE gate
             res = ScoutGreedy(use_lazy=False).select(utility=joint, num_clients=K, budget=budget,
                                                      feasible=feasible)
@@ -379,7 +420,9 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
                 losses, np.linalg.norm(embs, axis=1), np.asarray(g_round))
             vis_scores = vis_model.score_all(vis_feats)
             # Primal-dual soft MSE penalty (same as SCOUT-v2; no hard gate)
-            mse_k = np.array([aggregation_mse(g_round, [k], power=P, sigma2=sigma2) for k in range(K)])
+            mse_k = np.array([aggregation_mse(g_round, [k], power=P, sigma2=sigma2,
+                                              interference=interference)
+                              for k in range(K)])
             resource_cost = duals.mu.get("mse", 0.0) * np.array([_mse_viol(v, mse_eps) for v in mse_k])
             net_scores = vis_scores - resource_cost
             order = np.argsort(-net_scores)
@@ -419,15 +462,25 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
         # --- aggregate (FedAvg; OTA-distorted for OTA-FL/ISCC methods) + apply ---
         tic = time.perf_counter()
         ota_this = True if method in _OTA_FORCE_ON else (False if method in _OTA_FORCE_OFF else ota_on)
-        mse = aggregation_mse(g_round, selected, power=P, sigma2=sigma2) if aircomp_on else 0.0
+        mse = (aggregation_mse(g_round, selected, power=P, sigma2=sigma2,
+                               interference=interference)
+               if aircomp_on else 0.0)
         if method in ("scout_v2", "vismaya", *_VISMAYA_ABLATIONS) and aircomp_on:
             # dual ascent on the realized violation; under dual_normalized the constraint is
             # mse/eps <= 1, so the update sees an O(1) violation and eta needs no rescaling
             _realized = (float(mse) / max(float(mse_eps), 1e-30) if (dual_norm and mse_eps)
                          else float(mse))
             duals.update({"mse": _realized})
-        agg = aggregate(updates, counts, ota=ota_this, mse=mse, scale=ota_scale, rng=rng)
+        noise_scale = np.sqrt(update_power) if auto_pi else ota_scale
+        agg = aggregate(updates, counts, ota=ota_this, mse=mse, scale=noise_scale, rng=rng)
         server.apply_aggregated_update(g_flat, agg)
+        if auto_pi and updates:
+            # Per-entry power of the transmitted signal, averaged over the active set. The
+            # server learns it from the updates it has just received and broadcasts it as the
+            # normalisation for the next round, so the value used in round t is the one
+            # measured in round t-1 and the loop stays causal.
+            update_power = float(np.mean([np.mean(np.asarray(u, dtype=float) ** 2)
+                                          for u in updates]))
         agg_time = time.perf_counter() - tic
 
         # --- evaluate + ISAC metrics ---
@@ -465,6 +518,8 @@ def run_one(method, cfg, scn, g, client_datasets, x_test, y_test,
             "fairness_util": round(float(fair.value(selected)), 4),
             "crb": round(float((scn.w * sensing.crb(selected)).sum()), 5),
             "agg_mse": round(float(mse), 8),
+            "update_power": float(f"{update_power:.6g}"),
+            "round_latency_s": round(float(np.max(per_client_latency[selected])), 6),
             # P6 convergence: ||aggregated update||^2 is the per-round descent driver (proxy for
             # the eta/2 ||grad F||^2 term); regressed against agg_mse in analysis/convergence.py.
             "grad_sq": round(float(np.dot(agg, agg)), 8),
@@ -562,6 +617,13 @@ def run_seed(cfg, ds, seed, runs_root=None, tag="run", point="base"):
         g = load_channel_realizations(chan_source, scn.K, rng, root=cfg.fl.get("data_root", "data"))
     else:
         _phys = cfg.get("physical", {})
+        from scout_fl.sim.channel import large_scale_gain
+        scn.large_scale = large_scale_gain(
+            scn.clients, np.asarray(cfg.geometry.bs_position, dtype=float),
+            snr_ref_db=cfg.channel.snr_ref_db, ref_distance=cfg.channel.reference_distance,
+            pathloss_exponent=cfg.channel.pathloss_exponent,
+            pathloss_model=("physical" if _phys and _phys.get("enabled") else "reference_snr"),
+            carrier_ghz=float(_phys.get("carrier_ghz", 3.5)) if _phys else 3.5)
         g = comm_channel_gains(scn.clients, np.asarray(cfg.geometry.bs_position, dtype=float), rng,
                                snr_ref_db=cfg.channel.snr_ref_db, ref_distance=cfg.channel.reference_distance,
                                pathloss_exponent=cfg.channel.pathloss_exponent,

@@ -61,6 +61,25 @@ SWEEPS = {
     "B_wireless_channel": {"test": "B", "param": "channel.model", "points": [
         {"channel.model": "rayleigh"}, {"channel.model": "rician"},
     ]},
+    # Co-channel interference floor. The thermal floor at B = 1 MHz and F = 7 dB is
+    # -107 dBm, so this spans an interference-to-noise ratio of about -13 dB to +7 dB.
+    # Interference reaches the scheduler only through sigma^2 + I, so this sweep is the
+    # direct test of the claim that the dual price absorbs it without estimating it.
+    "B_wireless_interference": {"test": "B", "param": "physical.interference_dbm", "points": [
+        {"physical.interference_dbm": v} for v in (None, -120, -115, -110, -105, -100)
+    ]},
+    # Bandwidth enters twice and in opposite directions: the thermal floor grows linearly
+    # in B while the uplink phase shrinks as 1/B. The sweep locates the interior optimum
+    # that the closed-form rule predicts.
+    "B_wireless_bandwidth": {"test": "B", "param": "aircomp.bandwidth", "points": [
+        {"aircomp.bandwidth": v} for v in (2.5e5, 5.0e5, 1.0e6, 2.0e6, 4.0e6)
+    ]},
+    # Channel coherence. One round means independent fading every round; 150 rounds means
+    # the channel is frozen for the whole run, which recovers the block-static model. This
+    # is the sweep that shows whether an adaptive dual price earns its place.
+    "B_wireless_coherence": {"test": "B", "param": "channel.coherence_rounds", "points": [
+        {"channel.coherence_rounds": v} for v in (1, 5, 25, 150)
+    ]},
     # ---- Test C: Sensing / ISAC -----------------------------------------
     "C_sensing_targets": {"test": "C", "param": "network.num_targets", "points": [
         {"network.num_targets": 2, "sensing.target_weights": [1.0, 1.0]},
@@ -75,6 +94,8 @@ _METRICS = ["acc", "best_acc", "logdet", "crb", "agg_mse", "jain", "energy"]
 
 
 def _fmt(v):
+    if v is None:
+        return "null"                      # YAML null, so the override clears the key
     if isinstance(v, (list, tuple)):
         return "[" + ", ".join(str(x) for x in v) + "]"
     return str(v)
@@ -93,7 +114,7 @@ def _selected_sweeps(names):
     return {n: SWEEPS[n] for n in names}
 
 
-def run_campaign(base_config, sweeps, base_overrides, quick, out_root):
+def run_campaign(base_config, sweeps, base_overrides, quick, out_root, tag="campaign"):
     logger = RunLogger(out_root, "campaign", 0, {})
     matrix, summary = [], {}
     ds_cache = {}
@@ -119,7 +140,7 @@ def run_campaign(base_config, sweeps, base_overrides, quick, out_root):
                   f"(dataset={cfg.fl.dataset}, seeds={seeds}, rounds={cfg.fl.rounds}) ===")
             point_tag = f"{sweep_name}={label}"                # resumable per-round store key
             per_method, _, _ = run_bakeoff(cfg, ds, seeds, runs_root="runs",
-                                           tag="campaign", point=point_tag)
+                                           tag=tag, point=point_tag)
             methods, agg, norm, vol, nd, pareto = aggregate_results(per_method)
             hv = round(float(hypervolume(norm)), 4)
             winners = [m for m in methods if pareto[m]["pareto_optimal"]]
@@ -179,6 +200,9 @@ def main():
     p.add_argument("--sweeps", nargs="*", default=None, help=f"subset of {list(SWEEPS)}")
     p.add_argument("--override", nargs="*", default=None)
     p.add_argument("--out", default="outputs/campaign")
+    p.add_argument("--tag", default="campaign",
+                   help="resumable run-store tag -> runs/<tag>/; use a NEW tag to force a "
+                        "clean recompute instead of resuming completed units")
     p.add_argument("--quick", action="store_true", help="tiny fast smoke run")
     p.add_argument("--dry-run", action="store_true", help="print the matrix and exit")
     args = p.parse_args()
@@ -189,7 +213,7 @@ def main():
         return
     device = resolve_device(load_config(args.config, args.override).fl.get("device", "auto"))
     print(f"[device] using {device} ({describe_device(device)})")
-    run_campaign(args.config, sweeps, args.override, args.quick, args.out)
+    run_campaign(args.config, sweeps, args.override, args.quick, args.out, tag=args.tag)
 
 
 if __name__ == "__main__":

@@ -105,8 +105,15 @@ def build_scenario(cfg, rng) -> Scenario:
     geom = pairwise_geometry(clients, targets)
 
     rcs = np.clip(rng.normal(cfg.sensing.rcs_mean, cfg.sensing.rcs_std, size=M), 1e-3, None)
+    # The echo that carries the sensing information is the same transmission that carries
+    # the model update, so the echo SNR tracks the transmit power. sensing.ref_tx_power_dbm
+    # is the power at which sensing.ref_snr_db was calibrated; a sweep of
+    # physical.tx_power_dbm then moves the sensing axis as well as the communication axis.
+    _phys, _sens = cfg.get("physical", {}) or {}, cfg.get("sensing", {})
+    _tx = _phys.get("tx_power_dbm") if (_phys.get("enabled") and _sens.get("ref_tx_power_dbm") is not None) else None
     snr = sensing_snr(geom, cfg.sensing.ref_snr_db, cfg.sensing.pathloss_exponent,
-                      rcs=rcs, ref_distance=cfg.sensing.ref_distance)
+                      rcs=rcs, ref_distance=cfg.sensing.ref_distance,
+                      tx_power_dbm=_tx, ref_tx_power_dbm=_sens.get("ref_tx_power_dbm"))
     fim = per_client_target_fim(geom, snr, cfg.sensing.k_range, cfg.sensing.k_angle)
     j0 = prior_fim(M, cfg.sensing.prior_fim)
     weights = (np.asarray(cfg.sensing.target_weights, dtype=float)
